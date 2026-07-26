@@ -48,6 +48,14 @@ def line_number(text: str, offset: int) -> int:
     return text.count("\n", 0, offset) + 1
 
 
+def safe_private_key_context(text: str, match: re.Match[str]) -> str:
+    """Return only the preceding command, never PEM body material."""
+    lines = text[: match.start()].splitlines()
+    previous = next((line.strip() for line in reversed(lines) if line.strip()), "<file-start>")
+    previous = re.sub(r"[A-Za-z0-9+/=]{24,}", "<redacted>", previous)
+    return previous[:160]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
@@ -67,7 +75,10 @@ def main() -> int:
             continue
         for label, pattern in PATTERNS:
             for match in pattern.finditer(text):
-                findings.append(f"{relative}:{line_number(text, match.start())}: {label}")
+                finding = f"{relative}:{line_number(text, match.start())}: {label}"
+                if label == "Private key":
+                    finding += f"; previous={safe_private_key_context(text, match)!r}"
+                findings.append(finding)
 
     if findings:
         print("Potential secrets detected:", file=sys.stderr)
