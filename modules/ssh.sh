@@ -114,20 +114,36 @@ EOF
 }
 
 ssh_install_sslh() {
-  # Ubuntu and Debian ship mutually incompatible sslh.service defaults. Keep
-  # the package binary, but isolate Hex Tunnel in its own wrapper and unit.
+  # Distribution-provided sslh.service files load incompatible defaults across
+  # releases. Hex Tunnel uses one explicit libconfig file and a private unit.
   safe_stop_disable_service sslh
+  ensure_dir 700 /etc/hextunnel
+
+  write_file /etc/hextunnel/sslh.cfg 644 <<'EOF'
+verbose: false;
+foreground: true;
+inetd: false;
+numeric: true;
+timeout: 2;
+on-timeout: "ssh";
+listen:
+(
+  { host: "127.0.0.1"; port: "666"; }
+);
+protocols:
+(
+  { name: "ssh"; host: "127.0.0.1"; port: "22"; },
+  { name: "http"; host: "127.0.0.1"; port: "10080"; }
+);
+EOF
 
   write_file /usr/local/sbin/hextunnel-sslh 755 <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 for binary in /usr/sbin/sslh-select /usr/sbin/sslh-fork /usr/sbin/sslh; do
   [[ -x "$binary" ]] || continue
-  exec "$binary" -f \
-    --listen 127.0.0.1:666 \
-    --ssh 127.0.0.1:22 \
-    --http 127.0.0.1:10080
-done
+  exec "$binary" -F /etc/hextunnel/sslh.cfg
+ done
 echo "No se encontró un binario SSLH compatible." >&2
 exit 127
 EOF
@@ -153,6 +169,7 @@ ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
 RestrictAddressFamilies=AF_INET AF_INET6
+ReadOnlyPaths=/etc/hextunnel/sslh.cfg
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 
@@ -160,7 +177,8 @@ AmbientCapabilities=CAP_NET_BIND_SERVICE
 WantedBy=multi-user.target
 EOF
 
-  safe_restart_service hextunnel-sslh "test -x /usr/local/sbin/hextunnel-sslh"
+  safe_restart_service hextunnel-sslh \
+    "test -s /etc/hextunnel/sslh.cfg && test -x /usr/local/sbin/hextunnel-sslh"
 }
 
 ssh_install() {
@@ -170,6 +188,7 @@ ssh_install() {
     /etc/ssh/sshd_config.d/90-hextunnel.conf \
     /etc/stunnel/hextunnel.conf \
     /etc/default/stunnel4 \
+    /etc/hextunnel/sslh.cfg \
     /usr/local/sbin/hextunnel-sslh \
     /etc/systemd/system/hextunnel-sslh.service \
     /etc/systemd/system/ws-proxy@.service \
@@ -293,6 +312,7 @@ ssh_uninstall() {
     /etc/ssh/sshd_config.d/90-hextunnel.conf \
     /etc/stunnel/hextunnel.conf \
     /etc/default/stunnel4 \
+    /etc/hextunnel/sslh.cfg \
     /usr/local/sbin/hextunnel-sslh \
     /etc/systemd/system/hextunnel-sslh.service \
     /etc/systemd/system/ws-proxy@.service \
@@ -314,7 +334,7 @@ ssh_uninstall() {
 ssh_validate() {
   command_exists sshd && sshd -t
   [[ ! -f /etc/stunnel/hextunnel.conf ]] || test -s /etc/xray/xray.key
-  [[ -x /usr/local/sbin/hextunnel-sslh ]]
+  [[ -s /etc/hextunnel/sslh.cfg && -x /usr/local/sbin/hextunnel-sslh ]]
   systemctl is-active --quiet hextunnel-sslh
   [[ ! -f /etc/fail2ban/jail.d/hextunnel-sshd.local ]] || fail2ban-client -t >/dev/null
 }
