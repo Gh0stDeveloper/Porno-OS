@@ -48,6 +48,20 @@ webmin_set_config_value() {
   fi
 }
 
+webmin_wait_ready() {
+  local port="${HEXTUNNEL_WEBMIN_PORT:-10000}" attempt
+  [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] && return 0
+  for attempt in $(seq 1 30); do
+    if systemctl is-active --quiet webmin \
+      && port_is_listening tcp "$port" any \
+      && curl -kfsS --connect-timeout 2 --max-time 4 -o /dev/null "https://127.0.0.1:${port}/"; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
 webmin_install() {
   local port="${HEXTUNNEL_WEBMIN_PORT:-10000}"
   [[ "$port" =~ ^[0-9]+$ && "$port" -ge 1 && "$port" -le 65535 ]] || die "Puerto Webmin inválido: $port"
@@ -69,6 +83,7 @@ webmin_install() {
   webmin_set_config_value blockhost_failures 5
   webmin_set_config_value blockhost_time 300
   safe_restart_service webmin "perl -c /usr/share/webmin/miniserv.pl >/dev/null && grep -q '^ssl=1$' /etc/webmin/miniserv.conf"
+  webmin_wait_ready || die "Webmin no abrió su listener TLS en 127.0.0.1:$port."
 }
 
 webmin_uninstall() {
@@ -85,13 +100,14 @@ webmin_uninstall() {
 webmin_validate() {
   [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] && return 0
   local port="${HEXTUNNEL_WEBMIN_PORT:-10000}"
-  [[ -s /etc/webmin/miniserv.conf ]]
-  grep -q '^ssl=1$' /etc/webmin/miniserv.conf
-  grep -q "^port=$port$" /etc/webmin/miniserv.conf
-  perl -c /usr/share/webmin/miniserv.pl >/dev/null
-  systemctl is-active --quiet webmin
-  port_is_listening tcp "$port" any
-  if [[ "${HEXTUNNEL_WEBMIN_PUBLIC:-0}" != 1 ]]; then grep -q '^bind=127.0.0.1$' /etc/webmin/miniserv.conf; fi
+  [[ -s /etc/webmin/miniserv.conf ]] || die "Falta miniserv.conf de Webmin."
+  grep -q '^ssl=1$' /etc/webmin/miniserv.conf || die "Webmin no tiene TLS habilitado."
+  grep -q "^port=$port$" /etc/webmin/miniserv.conf || die "Webmin no usa el puerto configurado $port."
+  if [[ "${HEXTUNNEL_WEBMIN_PUBLIC:-0}" != 1 ]]; then
+    grep -q '^bind=127.0.0.1$' /etc/webmin/miniserv.conf || die "Webmin no está restringido a loopback."
+  fi
+  perl -c /usr/share/webmin/miniserv.pl >/dev/null || die "miniserv.pl no supera perl -c."
+  webmin_wait_ready || die "Webmin no responde mediante TLS en 127.0.0.1:$port."
 }
 
 webmin_doctor() {
