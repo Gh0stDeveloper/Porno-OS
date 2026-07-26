@@ -141,6 +141,7 @@ install_selected_modules() {
   resolve_module_dependencies HEXTUNNEL_REQUESTED_MODULES
   preflight_all "${HEXTUNNEL_REQUESTED_MODULES[@]}"
   load_hextunnel_secrets
+  firewall_prepare_backend
   transaction_begin "install-$(join_by - "${HEXTUNNEL_REQUESTED_MODULES[@]}")"
   trap 'transaction_fail "$?" "$BASH_LINENO" "$BASH_COMMAND"' ERR INT TERM
   firewall_snapshot
@@ -166,6 +167,7 @@ uninstall_selected_modules() {
   if [[ "${HEXTUNNEL_REQUESTED_MODULES[0]}" == --all ]]; then
     HEXTUNNEL_REQUESTED_MODULES=(webmin zivpn slipstream slowdns udp-custom hysteria2 hysteria xray ssh)
   fi
+  firewall_prepare_backend
   transaction_begin "uninstall-$(join_by - "${HEXTUNNEL_REQUESTED_MODULES[@]}")"
   trap 'transaction_fail "$?" "$BASH_LINENO" "$BASH_COMMAND"' ERR INT TERM
   local module
