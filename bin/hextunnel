@@ -37,12 +37,20 @@ doctor_dns() {
   fi
   if [[ -n "${HEXTUNNEL_SLOWDNS_NS:-}" ]]; then
     printf 'SlowDNS NS %s: ' "$HEXTUNNEL_SLOWDNS_NS"
-    if command_exists dig; then dig +short NS "$HEXTUNNEL_SLOWDNS_NS" 2>/dev/null | paste -sd ',' -; else printf 'dig no instalado'; fi
+    if command_exists dig; then
+      dig +short NS "$HEXTUNNEL_SLOWDNS_NS" 2>/dev/null | paste -sd ',' -
+    else
+      printf 'dig no instalado'
+    fi
     printf '\n'
   fi
   if [[ -n "${HEXTUNNEL_SLIPSTREAM_DOMAIN:-}" ]]; then
     printf 'SlipStream NS %s: ' "$HEXTUNNEL_SLIPSTREAM_DOMAIN"
-    if command_exists dig; then dig +short NS "$HEXTUNNEL_SLIPSTREAM_DOMAIN" 2>/dev/null | paste -sd ',' -; else printf 'dig no instalado'; fi
+    if command_exists dig; then
+      dig +short NS "$HEXTUNNEL_SLIPSTREAM_DOMAIN" 2>/dev/null | paste -sd ',' -
+    else
+      printf 'dig no instalado'
+    fi
     printf '\n'
   fi
 }
@@ -67,10 +75,12 @@ doctor_certificates() {
 }
 
 doctor() {
-  local report="${1:-}" output raw sanitized module status=0 checked=0
+  local report="${1:-}" output raw sanitized module status=0 checked=0 cleanup_command
   raw="$(mktemp /tmp/hextunnel-doctor-raw.XXXXXX)"
   sanitized="$(mktemp /tmp/hextunnel-doctor.XXXXXX)"
-  trap 'rm -f "${raw:-}" "${sanitized:-}"' RETURN
+  printf -v cleanup_command 'rm -f -- %q %q' "$raw" "$sanitized"
+  trap "$cleanup_command" EXIT
+
   {
     echo "Hex Tunnel Doctor"
     echo "Fecha: $(date -Is)"
@@ -120,9 +130,12 @@ doctor() {
     echo "Errores recientes de systemd:"
     journalctl -p err -n 80 --no-pager 2>/dev/null || true
   } > "$raw"
+
   sanitize_text < "$raw" > "$sanitized"
   output="${report:-$HEXTUNNEL_LOG_DIR/doctor-$(date +%Y%m%d-%H%M%S).txt}"
   install -m 600 "$sanitized" "$output"
+  rm -f -- "$raw" "$sanitized"
+  trap - EXIT
   printf 'Reporte generado: %s\n' "$output"
   return "$status"
 }
@@ -130,7 +143,12 @@ doctor() {
 case "${1:-help}" in
   doctor)
     shift
-    if [[ "${1:-}" == --report ]]; then shift; doctor "${1:-}"; else doctor; fi
+    if [[ "${1:-}" == --report ]]; then
+      shift
+      doctor "${1:-}"
+    else
+      doctor
+    fi
     ;;
   status)
     for module in "${HEXTUNNEL_AVAILABLE_MODULES[@]}"; do
@@ -143,12 +161,33 @@ case "${1:-help}" in
       fi
     done
     ;;
-  install) shift; exec "$ROOT/install.sh" install "$@" ;;
-  uninstall) shift; exec "$ROOT/install.sh" uninstall "$@" ;;
-  account) shift; exec "$ROOT/bin/hextunnel-account" "$@" ;;
-  update) shift; exec "$ROOT/bin/hextunnel-update" "$@" ;;
-  rollback) shift; rollback_transaction "${1:-}" ;;
-  legacy-menu) [[ -x /usr/local/bin/menu ]] && exec /usr/local/bin/menu || die "El menú heredado no está instalado." ;;
-  help|--help|-h) usage ;;
-  *) die "Comando desconocido: ${1:-}" ;;
+  install)
+    shift
+    exec "$ROOT/install.sh" install "$@"
+    ;;
+  uninstall)
+    shift
+    exec "$ROOT/install.sh" uninstall "$@"
+    ;;
+  account)
+    shift
+    exec "$ROOT/bin/hextunnel-account" "$@"
+    ;;
+  update)
+    shift
+    exec "$ROOT/bin/hextunnel-update" "$@"
+    ;;
+  rollback)
+    shift
+    rollback_transaction "${1:-}"
+    ;;
+  legacy-menu)
+    [[ -x /usr/local/bin/menu ]] && exec /usr/local/bin/menu || die "El menú heredado no está instalado."
+    ;;
+  help|--help|-h)
+    usage
+    ;;
+  *)
+    die "Comando desconocido: ${1:-}"
+    ;;
 esac
