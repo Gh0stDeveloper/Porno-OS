@@ -17,13 +17,16 @@ install_framework() {
       tar -C "$source_root" --exclude=.git --exclude='*.log' -cf - . | tar -C "$HEXTUNNEL_INSTALL_DIR" -xf -
       find "$HEXTUNNEL_INSTALL_DIR" -type d -exec chmod 755 {} +
       find "$HEXTUNNEL_INSTALL_DIR" -type f -name '*.sh' -exec chmod 644 {} +
-      chmod 755 "$HEXTUNNEL_INSTALL_DIR/install.sh" "$HEXTUNNEL_INSTALL_DIR"/bin/* "$HEXTUNNEL_INSTALL_DIR"/legacy/install-all.sh
+      chmod 755 \
+        "$HEXTUNNEL_INSTALL_DIR/install.sh" \
+        "$HEXTUNNEL_INSTALL_DIR"/bin/* \
+        "$HEXTUNNEL_INSTALL_DIR/legacy/install-all.sh"
     fi
   fi
 
   local command
-  for command in hextunnel hextunnel-doctor hextunnel-account hextunnel-update; do
-    [[ -f "$HEXTUNNEL_INSTALL_DIR/bin/$command" ]] || continue
+  for command in hextunnel hextunnel-doctor hextunnel-account hextunnel-update hextunnel-health; do
+    [[ -f "$HEXTUNNEL_INSTALL_DIR/bin/$command" || "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] || continue
     backup_path "/usr/local/bin/$command"
     if [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]]; then
       log_dry "enlazar /usr/local/bin/$command"
@@ -32,17 +35,26 @@ install_framework() {
     fi
   done
 
-  if [[ ! -f "$HEXTUNNEL_CONFIG_FILE" && -f "$HEXTUNNEL_INSTALL_DIR/config/hextunnel.env.example" ]]; then
-    install -m 600 "$HEXTUNNEL_INSTALL_DIR/config/hextunnel.env.example" "$HEXTUNNEL_CONFIG_FILE"
+  if [[ ! -f "$HEXTUNNEL_CONFIG_FILE" ]]; then
+    if [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]]; then
+      log_dry "instalar ejemplo en $HEXTUNNEL_CONFIG_FILE con modo 600"
+    elif [[ -f "$HEXTUNNEL_INSTALL_DIR/config/hextunnel.env.example" ]]; then
+      install -m 600 "$HEXTUNNEL_INSTALL_DIR/config/hextunnel.env.example" "$HEXTUNNEL_CONFIG_FILE"
+    fi
   fi
-  if [[ ! -f "$HEXTUNNEL_SECRETS_FILE" && -f "$HEXTUNNEL_INSTALL_DIR/config/secrets.env.example" ]]; then
-    install -m 600 "$HEXTUNNEL_INSTALL_DIR/config/secrets.env.example" "$HEXTUNNEL_SECRETS_FILE"
+  if [[ ! -f "$HEXTUNNEL_SECRETS_FILE" ]]; then
+    if [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]]; then
+      log_dry "instalar ejemplo en $HEXTUNNEL_SECRETS_FILE con modo 600"
+    elif [[ -f "$HEXTUNNEL_INSTALL_DIR/config/secrets.env.example" ]]; then
+      install -m 600 "$HEXTUNNEL_INSTALL_DIR/config/secrets.env.example" "$HEXTUNNEL_SECRETS_FILE"
+    fi
   fi
 
   install_systemd_unit hextunnel-health.service 644 <<'EOF'
 [Unit]
 Description=Hex Tunnel health audit
 After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=oneshot
@@ -52,6 +64,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=full
+ReadOnlyPaths=/opt/hextunnel /etc/hextunnel
 ReadWritePaths=/var/log/hextunnel /var/lib/hextunnel
 EOF
   install_systemd_unit hextunnel-health.timer 644 <<'EOF'
