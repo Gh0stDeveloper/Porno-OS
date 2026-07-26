@@ -106,11 +106,11 @@ nat_is_present() {
   case "$backend" in
     nft)
       output="$(nft -a list chain inet hextunnel_nat prerouting 2>/dev/null || true)"
-      if grep -Fq "comment \"$tag\"" <<< "$output"; then return 0; fi
+      if grep -Fq "$tag" <<< "$output"; then return 0; fi
       ;;
     ufw|iptables)
       output="$(iptables-save -t nat 2>/dev/null || true)"
-      if grep -Fq -- "--comment $tag" <<< "$output"; then return 0; fi
+      if grep -Fq "$tag" <<< "$output"; then return 0; fi
       ;;
   esac
   return 1
