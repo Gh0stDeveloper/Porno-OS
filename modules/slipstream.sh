@@ -63,7 +63,7 @@ slipstream_install_rust_toolchain() {
 slipstream_reset_seed_valid() {
   local seed="${1:-/etc/slipstream/reset-seed}"
   [[ -f "$seed" ]] || return 1
-  grep -Eq '^[0-9a-f]{64}$' "$seed"
+  grep -Eq '^[0-9a-f]{32}$' "$seed"
 }
 
 slipstream_install() {
@@ -116,10 +116,10 @@ slipstream_install() {
   fi
   if [[ "${HEXTUNNEL_DRY_RUN:-0}" != 1 ]] && ! slipstream_reset_seed_valid; then
     backup_path /etc/slipstream/reset-seed
-    openssl rand -hex 32 > /etc/slipstream/reset-seed
+    openssl rand -hex 16 > /etc/slipstream/reset-seed
   fi
   if [[ "${HEXTUNNEL_DRY_RUN:-0}" != 1 ]]; then
-    slipstream_reset_seed_valid || die "SlipStream requiere un reset seed hexadecimal de 64 caracteres."
+    slipstream_reset_seed_valid || die "SlipStream requiere un reset seed hexadecimal de 32 caracteres."
     chown root:hextunnel-slipstream /etc/slipstream /etc/slipstream/cert.pem /etc/slipstream/key.pem /etc/slipstream/reset-seed
     chmod 750 /etc/slipstream
     chmod 644 /etc/slipstream/cert.pem
@@ -187,7 +187,7 @@ SLOWDNS_RESTORE_PORT=$previous_port
 EOF
 
   slowdns_set_listener 127.0.0.1 5301
-  write_file /etc/dnsdist/dnsdist.conf 600 <<EOF
+  write_file /etc/dnsdist/dnsdist.conf 644 <<EOF
 setLocal('$dns_address:$dns_port')
 setACL({'0.0.0.0/0', '::/0'})
 newServer({address='127.0.0.1:5301', name='slowdns', pool='slowdns'})
@@ -202,7 +202,7 @@ addAction(AllRule(), PoolAction('slowdns'))
 EOF
 
   safe_restart_service danted "danted -V -f /etc/danted.conf >/dev/null 2>&1 || test -s /etc/danted.conf"
-  safe_restart_service slipstream "test -x $install_dir/target/release/slipstream-server && runuser -u hextunnel-slipstream -- test -r /etc/slipstream/key.pem && grep -Eq '^[0-9a-f]{64}$' /etc/slipstream/reset-seed && openssl x509 -in /etc/slipstream/cert.pem -noout"
+  safe_restart_service slipstream "test -x $install_dir/target/release/slipstream-server && runuser -u hextunnel-slipstream -- test -r /etc/slipstream/key.pem && grep -Eq '^[0-9a-f]{32}$' /etc/slipstream/reset-seed && openssl x509 -in /etc/slipstream/cert.pem -noout"
   safe_restart_service dnsdist "dnsdist -C /etc/dnsdist/dnsdist.conf --check-config >/dev/null 2>&1"
   if [[ "${HEXTUNNEL_DRY_RUN:-0}" != 1 ]]; then
     sleep 1
