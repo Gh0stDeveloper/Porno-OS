@@ -99,7 +99,7 @@ AmbientCapabilities=CAP_NET_BIND_SERVICE
 [Install]
 WantedBy=multi-user.target
 EOF
-  safe_restart_service server-sldns "test -r /etc/slowdns/server.key && test -s /etc/slowdns/server.pub && test -s /etc/default/hextunnel-slowdns"
+  safe_restart_service server-sldns "runuser -u hextunnel-slowdns -- test -r /etc/slowdns/server.key && test -s /etc/slowdns/server.pub && test -s /etc/default/hextunnel-slowdns"
 }
 
 slowdns_set_listener() {
@@ -126,7 +126,7 @@ slowdns_uninstall() {
 slowdns_validate() {
   [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] && return 0
   [[ -x /usr/local/bin/sldns-server && -s /etc/slowdns/server.key && -s /etc/slowdns/server.pub && -s /etc/default/hextunnel-slowdns ]]
-  sudo -u hextunnel-slowdns test -r /etc/slowdns/server.key
+  runuser -u hextunnel-slowdns -- test -r /etc/slowdns/server.key
 }
 
 slowdns_doctor() {
