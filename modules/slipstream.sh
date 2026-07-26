@@ -71,6 +71,7 @@ slipstream_install() {
   local slowdns_ns="${HEXTUNNEL_SLOWDNS_NS:-}"
   local install_dir="${HEXTUNNEL_SLIPSTREAM_DIR:-/opt/slipstream-rust}"
   local rust_root="${HEXTUNNEL_RUST_ROOT:-/opt/hextunnel-rust}"
+  local binary=/usr/local/libexec/hextunnel/slipstream-server
   local commit="${HEXTUNNEL_SLIPSTREAM_COMMIT:-bc772dd07d9a136dbd7553b0da575526de207847}"
   local external_ip dns_address dns_port common_name previous_address previous_port cargo
   if [[ -z "$domain" && "${HEXTUNNEL_NON_INTERACTIVE:-0}" != 1 ]]; then
@@ -89,7 +90,7 @@ slipstream_install() {
   run_cmd apt-get update
   run_cmd apt-get install -y git curl build-essential cmake pkg-config libssl-dev dante-server dnsdist openssl ca-certificates
   ensure_system_user hextunnel-slipstream
-  backup_paths "$install_dir" "$rust_root" /etc/danted.conf /etc/dnsdist/dnsdist.conf /etc/systemd/system/slipstream.service /etc/slipstream
+  backup_paths "$install_dir" "$rust_root" "$binary" /etc/danted.conf /etc/dnsdist/dnsdist.conf /etc/systemd/system/slipstream.service /etc/slipstream
   slipstream_install_rust_toolchain
 
   if [[ "${HEXTUNNEL_DRY_RUN:-0}" != 1 ]]; then
@@ -106,6 +107,8 @@ slipstream_install() {
     RUSTUP_HOME="$rust_root/rustup" CARGO_HOME="$rust_root/cargo" \
       "$cargo" build --locked --release -p slipstream-server --manifest-path "$install_dir/Cargo.toml"
     [[ -x "$install_dir/target/release/slipstream-server" ]] || die "No se generó slipstream-server."
+    install -d -m 755 "$(dirname "$binary")"
+    install -m 755 "$install_dir/target/release/slipstream-server" "$binary"
   fi
 
   ensure_dir 750 /etc/slipstream
@@ -154,7 +157,7 @@ Type=simple
 User=hextunnel-slipstream
 Group=hextunnel-slipstream
 WorkingDirectory=/etc/slipstream
-ExecStart=$install_dir/target/release/slipstream-server --dns-listen-host 127.0.0.1 --dns-listen-port 5300 --target-address 127.0.0.1:1080 --domain $domain --cert /etc/slipstream/cert.pem --key /etc/slipstream/key.pem --reset-seed /etc/slipstream/reset-seed
+ExecStart=$binary --dns-listen-host 127.0.0.1 --dns-listen-port 5300 --target-address 127.0.0.1:1080 --domain $domain --cert /etc/slipstream/cert.pem --key /etc/slipstream/key.pem --reset-seed /etc/slipstream/reset-seed
 Restart=on-failure
 RestartSec=5s
 LimitNOFILE=65535
@@ -165,7 +168,7 @@ ProtectHome=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
-ReadOnlyPaths=$install_dir /etc/slipstream
+ReadOnlyPaths=/etc/slipstream
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 
@@ -202,7 +205,7 @@ addAction(AllRule(), PoolAction('slowdns'))
 EOF
 
   safe_restart_service danted "danted -V -f /etc/danted.conf >/dev/null 2>&1 || test -s /etc/danted.conf"
-  safe_restart_service slipstream "test -x $install_dir/target/release/slipstream-server && runuser -u hextunnel-slipstream -- test -r /etc/slipstream/key.pem && grep -Eq '^[0-9a-f]{32}$' /etc/slipstream/reset-seed && openssl x509 -in /etc/slipstream/cert.pem -noout"
+  safe_restart_service slipstream "test -x $binary && runuser -u hextunnel-slipstream -- test -x $binary && runuser -u hextunnel-slipstream -- test -r /etc/slipstream/key.pem && grep -Eq '^[0-9a-f]{32}$' /etc/slipstream/reset-seed && openssl x509 -in /etc/slipstream/cert.pem -noout"
   safe_restart_service dnsdist "dnsdist -C /etc/dnsdist/dnsdist.conf --check-config >/dev/null 2>&1"
   if [[ "${HEXTUNNEL_DRY_RUN:-0}" != 1 ]]; then
     sleep 1
@@ -216,6 +219,7 @@ slipstream_uninstall() {
   local restore_port="${HEXTUNNEL_SLOWDNS_LISTEN_PORT:-53}"
   local install_dir="${HEXTUNNEL_SLIPSTREAM_DIR:-/opt/slipstream-rust}"
   local rust_root="${HEXTUNNEL_RUST_ROOT:-/opt/hextunnel-rust}"
+  local binary=/usr/local/libexec/hextunnel/slipstream-server
   if [[ -r /etc/slipstream/slowdns-listener.env ]]; then
     # shellcheck disable=SC1091
     source /etc/slipstream/slowdns-listener.env
@@ -225,8 +229,8 @@ slipstream_uninstall() {
   safe_stop_disable_service dnsdist
   safe_stop_disable_service slipstream
   safe_stop_disable_service danted
-  backup_paths /etc/dnsdist/dnsdist.conf /etc/danted.conf /etc/systemd/system/slipstream.service /etc/slipstream "$install_dir" "$rust_root"
-  run_cmd rm -f /etc/dnsdist/dnsdist.conf /etc/danted.conf /etc/systemd/system/slipstream.service
+  backup_paths /etc/dnsdist/dnsdist.conf /etc/danted.conf /etc/systemd/system/slipstream.service /etc/slipstream "$install_dir" "$rust_root" "$binary"
+  run_cmd rm -f /etc/dnsdist/dnsdist.conf /etc/danted.conf /etc/systemd/system/slipstream.service "$binary"
   run_cmd rm -rf /etc/slipstream "$install_dir" "$rust_root"
   systemd_reload
   slowdns_set_listener "$restore_address" "$restore_port"
@@ -236,8 +240,9 @@ slipstream_uninstall() {
 
 slipstream_validate() {
   [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] && return 0
-  local install_dir="${HEXTUNNEL_SLIPSTREAM_DIR:-/opt/slipstream-rust}"
-  [[ -x "$install_dir/target/release/slipstream-server" && -s /etc/dnsdist/dnsdist.conf && -s /etc/slipstream/key.pem && -s /etc/slipstream/slowdns-listener.env ]]
+  local binary=/usr/local/libexec/hextunnel/slipstream-server
+  [[ -x "$binary" && -s /etc/dnsdist/dnsdist.conf && -s /etc/slipstream/key.pem && -s /etc/slipstream/slowdns-listener.env ]]
+  runuser -u hextunnel-slipstream -- test -x "$binary"
   runuser -u hextunnel-slipstream -- test -r /etc/slipstream/key.pem
   slipstream_reset_seed_valid
   dnsdist -C /etc/dnsdist/dnsdist.conf --check-config >/dev/null 2>&1
