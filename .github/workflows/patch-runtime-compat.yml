@@ -20,22 +20,27 @@ jobs:
 
           sed -i 's|exec "$binary" -F /etc/sslh/hextunnel.cfg|exec "$binary" --config /etc/sslh/hextunnel.cfg|' modules/ssh.sh
 
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path('modules/hysteria2.sh')
-          text = path.read_text()
-          old = '''  [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] || \\
-            install -m 640 -o root -g hextunnel-hysteria2 /etc/hysteria2/users.txt /etc/hysteria2/users.txt
-          '''
-          new = '''  if [[ "${HEXTUNNEL_DRY_RUN:-0}" != 1 ]]; then
-            chown root:hextunnel-hysteria2 /etc/hysteria2/users.txt
-            chmod 640 /etc/hysteria2/users.txt
-          fi
-          '''
-          if old not in text:
-              raise SystemExit('Hysteria 2 permission block not found')
-          path.write_text(text.replace(old, new, 1))
-          PY
+          awk '
+            /^[[:space:]]*\[\[ "\$\{HEXTUNNEL_DRY_RUN:-0\}" == 1 \]\] \|\| \\$/ {
+              first=$0
+              if ((getline second) <= 0) {
+                print first
+                next
+              }
+              if (second ~ /install -m 640 -o root -g hextunnel-hysteria2 \/etc\/hysteria2\/users.txt \/etc\/hysteria2\/users.txt/) {
+                print "  if [[ \"${HEXTUNNEL_DRY_RUN:-0}\" != 1 ]]; then"
+                print "    chown root:hextunnel-hysteria2 /etc/hysteria2/users.txt"
+                print "    chmod 640 /etc/hysteria2/users.txt"
+                print "  fi"
+                next
+              }
+              print first
+              print second
+              next
+            }
+            { print }
+          ' modules/hysteria2.sh > modules/hysteria2.sh.tmp
+          mv modules/hysteria2.sh.tmp modules/hysteria2.sh
 
           grep -q 'exec "$binary" --config /etc/sslh/hextunnel.cfg' modules/ssh.sh
           grep -q 'chown root:hextunnel-hysteria2 /etc/hysteria2/users.txt' modules/hysteria2.sh
