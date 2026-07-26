@@ -1,1 +1,1 @@
-error: Unable to find a safe module boundary after line 1950
+error: Module concatenation does not reproduce the sanitized installer
