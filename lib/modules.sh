@@ -89,7 +89,7 @@ module_install() {
   log_info "Instalando módulo: $module"
   firewall_apply_module_ports "$module"
   module_call "$module" install
-  module_call "$module" validate
+  module_validate "$module"
   module_mark_installed "$module"
   log_success "Módulo instalado: $module"
 }
@@ -103,7 +103,12 @@ module_uninstall() {
 }
 
 module_validate() {
-  module_call "$1" validate
+  local module="$1"
+  if [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]]; then
+    log_dry "validar módulo $module"
+    return 0
+  fi
+  module_call "$module" validate
 }
 
 module_doctor() {
