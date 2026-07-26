@@ -87,6 +87,10 @@ class ModularizationTests(unittest.TestCase):
             syntax = subprocess.run(["bash", "-n", str(temp / "install.sh")], check=False)
             self.assertEqual(syntax.returncode, 0)
 
+    def test_incomplete_heredoc_is_rejected(self) -> None:
+        fragment = "cat <<'EOF_SAMPLE'\nunterminated\n"
+        self.assertFalse(MODULARIZE.bash_syntax_ok(fragment))
+
     def test_split_fragments_are_valid_bash(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             temp = Path(directory)
