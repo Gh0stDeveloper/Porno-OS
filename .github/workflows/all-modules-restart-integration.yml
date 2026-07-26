@@ -172,6 +172,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          inside() { docker exec hextunnel-all bash -lc "$1"; }
           services=(
             ssh stunnel4 hextunnel-sslh fail2ban xray hextunnel-haproxy
             hextunnel-hysteria hextunnel-hysteria-nat hysteria2
@@ -183,18 +184,19 @@ jobs:
           done
           docker exec hextunnel-all hextunnel-nat status hysteria1
           docker exec hextunnel-all hextunnel-nat status zivpn
-          docker exec hextunnel-all nft -a list chain inet hextunnel_nat prerouting | grep -Fq 'hextunnel-nat:hysteria1:exempt:36713'
-          docker exec hextunnel-all nft -a list chain inet hextunnel_nat prerouting | grep -Fq 'hextunnel-nat:hysteria1:exempt:36717'
-          docker exec hextunnel-all ss -lntup | grep -q ':22 '
-          docker exec hextunnel-all ss -lntup | grep -q ':299 '
-          docker exec hextunnel-all ss -lunp | grep -q ':36712 '
-          docker exec hextunnel-all ss -lunp | grep -q ':36713 '
-          docker exec hextunnel-all ss -lunp | grep -q ':36717 '
-          docker exec hextunnel-all ss -lunp | grep -q ':5667 '
-          docker exec hextunnel-all ss -lunp | grep -q '127.0.0.1:5300'
-          docker exec hextunnel-all ss -lunp | grep -q '127.0.0.1:5301'
-          docker exec hextunnel-all ss -lunp | grep -q '127.0.0.1:5354'
-          docker exec hextunnel-all ss -lntp | grep -q '127.0.0.1:10000'
+          inside "nft -a list chain inet hextunnel_nat prerouting | grep -Fq 'hextunnel-nat:hysteria1:exempt:36713'"
+          inside "nft -a list chain inet hextunnel_nat prerouting | grep -Fq 'hextunnel-nat:hysteria1:exempt:36717'"
+          inside "ss -lntup | grep -q ':22 '"
+          inside "ss -lntup | grep -q ':299 '"
+          inside "ss -lunp | grep -q ':36712 '"
+          inside "ss -lunp | grep -q ':36713 '"
+          inside "ss -lunp | grep -q ':36717 '"
+          inside "ss -lunp | grep -q ':5667 '"
+          inside "ss -lunp | grep -q '127.0.0.1:5300'"
+          inside "ss -lunp | grep -q '127.0.0.1:5301'"
+          inside "ss -lunp | grep -q '127.0.0.1:5354'"
+          inside "ss -lntp | grep -q '127.0.0.1:10000'"
+          docker exec hextunnel-all test -x /usr/local/libexec/hextunnel/slipstream-server
           docker exec hextunnel-all hextunnel doctor --report /tmp/all-modules-doctor-before.txt
 
       - name: Restart systemd environment
@@ -214,6 +216,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          inside() { docker exec hextunnel-all bash -lc "$1"; }
           services=(
             ssh stunnel4 hextunnel-sslh fail2ban xray hextunnel-haproxy
             hextunnel-hysteria hextunnel-hysteria-nat hysteria2
@@ -225,12 +228,15 @@ jobs:
           done
           docker exec hextunnel-all hextunnel-nat status hysteria1
           docker exec hextunnel-all hextunnel-nat status zivpn
-          docker exec hextunnel-all nft -a list chain inet hextunnel_nat prerouting | grep -Fq 'udp dport 36710-36720'
-          docker exec hextunnel-all nft -a list chain inet hextunnel_nat prerouting | grep -Fq 'hextunnel-nat:hysteria1:exempt:36713'
-          docker exec hextunnel-all nft -a list chain inet hextunnel_nat prerouting | grep -Fq 'hextunnel-nat:hysteria1:exempt:36717'
-          docker exec hextunnel-all nft -a list chain inet hextunnel_nat prerouting | grep -Fq 'udp dport 6100-6110'
-          docker exec hextunnel-all ss -lunp | grep -q ':36713 '
-          docker exec hextunnel-all ss -lunp | grep -q ':36717 '
+          inside "nft -a list chain inet hextunnel_nat prerouting | grep -Fq 'udp dport 36710-36720'"
+          inside "nft -a list chain inet hextunnel_nat prerouting | grep -Fq 'hextunnel-nat:hysteria1:exempt:36713'"
+          inside "nft -a list chain inet hextunnel_nat prerouting | grep -Fq 'hextunnel-nat:hysteria1:exempt:36717'"
+          inside "nft -a list chain inet hextunnel_nat prerouting | grep -Fq 'udp dport 6100-6110'"
+          inside "ss -lunp | grep -q ':36713 '"
+          inside "ss -lunp | grep -q ':36717 '"
+          inside "ss -lunp | grep -q '127.0.0.1:5300'"
+          inside "ss -lunp | grep -q '127.0.0.1:5301'"
+          inside "ss -lunp | grep -q '127.0.0.1:5354'"
           docker exec hextunnel-all hextunnel doctor --report /tmp/all-modules-doctor-after.txt
 
       - name: Uninstall all maintained modules
@@ -253,6 +259,7 @@ jobs:
             /etc/systemd/system/xray.service
             /etc/systemd/system/hextunnel-sslh.service
             /etc/ssh/sshd_config.d/90-hextunnel.conf
+            /usr/local/libexec/hextunnel/slipstream-server
             /etc/hysteria1 /etc/hysteria2 /etc/udp-custom /etc/slowdns /etc/slipstream /etc/zivpn /etc/webmin
           )
           for path in "${paths[@]}"; do
@@ -260,7 +267,7 @@ jobs:
           done
           ! docker exec hextunnel-all hextunnel-nat status hysteria1
           ! docker exec hextunnel-all hextunnel-nat status zivpn
-          docker exec hextunnel-all ss -lntp | grep -q ':22 '
+          docker exec hextunnel-all bash -lc "ss -lntp | grep -q ':22 '"
 
       - name: Collect full-cycle diagnostics
         if: always()
