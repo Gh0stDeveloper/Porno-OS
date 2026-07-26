@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-slowdns_ports() { printf '%s\n' 'udp 53'; }
+slowdns_ports() { printf '%s\n' 'udp 53 0.0.0.0/0 public'; }
 slowdns_dependencies() { printf '%s\n' ssh; }
 
 slowdns_download_binary() {
@@ -8,7 +8,7 @@ slowdns_download_binary() {
   local expected="${HEXTUNNEL_SLOWDNS_SHA256:-}" tmp actual
   tmp="$(mktemp /tmp/hextunnel-slowdns.XXXXXX)"
   run_cmd curl -fL --retry 3 -o "$tmp" "$url"
-  [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] && return 0
+  [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] && { rm -f "$tmp"; return 0; }
   actual="$(sha256sum "$tmp" | awk '{print tolower($1)}')"
   if [[ -n "$expected" ]]; then
     [[ "$actual" == "${expected,,}" ]] || { rm -f "$tmp"; die "El SHA-256 de SlowDNS no coincide."; }
@@ -40,14 +40,18 @@ slowdns_generate_keys() {
 }
 
 slowdns_write_environment() {
-  local ns="${HEXTUNNEL_SLOWDNS_NS:-}" port="${HEXTUNNEL_SLOWDNS_LISTEN_PORT:-53}"
+  local ns="${HEXTUNNEL_SLOWDNS_NS:-}"
+  local port="${HEXTUNNEL_SLOWDNS_LISTEN_PORT:-53}"
+  local address="${HEXTUNNEL_SLOWDNS_LISTEN_ADDRESS:-$(primary_ipv4)}"
   if [[ -z "$ns" && "${HEXTUNNEL_NON_INTERACTIVE:-0}" != 1 ]]; then
     read -r -p "Nameserver delegado para SlowDNS: " ns
   fi
   [[ -n "$ns" ]] || die "HEXTUNNEL_SLOWDNS_NS es obligatorio."
   [[ "$ns" =~ ^[A-Za-z0-9.-]+$ ]] || die "Nameserver SlowDNS inválido."
+  [[ -n "$address" ]] || die "No se pudo determinar la IP de escucha para SlowDNS."
   write_file /etc/default/hextunnel-slowdns 600 <<EOF
 SLOWDNS_NS=$ns
+SLOWDNS_LISTEN_ADDRESS=$address
 SLOWDNS_LISTEN_PORT=$port
 SLOWDNS_TARGET_HOST=127.0.0.1
 SLOWDNS_TARGET_PORT=299
@@ -69,7 +73,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 EnvironmentFile=/etc/default/hextunnel-slowdns
-ExecStart=/usr/local/bin/sldns-server -udp :${SLOWDNS_LISTEN_PORT} -privkey-file /etc/slowdns/server.key ${SLOWDNS_NS} ${SLOWDNS_TARGET_HOST}:${SLOWDNS_TARGET_PORT}
+ExecStart=/usr/local/bin/sldns-server -udp ${SLOWDNS_LISTEN_ADDRESS}:${SLOWDNS_LISTEN_PORT} -privkey-file /etc/slowdns/server.key ${SLOWDNS_NS} ${SLOWDNS_TARGET_HOST}:${SLOWDNS_TARGET_PORT}
 Restart=on-failure
 RestartSec=3s
 User=nobody
@@ -88,11 +92,14 @@ EOF
   safe_restart_service server-sldns "test -s /etc/slowdns/server.key && test -s /etc/slowdns/server.pub && test -s /etc/default/hextunnel-slowdns"
 }
 
-slowdns_set_listen_port() {
-  local port="$1"
+slowdns_set_listener() {
+  local address="$1" port="$2"
   [[ -f /etc/default/hextunnel-slowdns ]] || return 0
   backup_path /etc/default/hextunnel-slowdns
-  [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] || sed -i -E "s/^SLOWDNS_LISTEN_PORT=.*/SLOWDNS_LISTEN_PORT=$port/" /etc/default/hextunnel-slowdns
+  if [[ "${HEXTUNNEL_DRY_RUN:-0}" != 1 ]]; then
+    sed -i -E "s/^SLOWDNS_LISTEN_ADDRESS=.*/SLOWDNS_LISTEN_ADDRESS=$address/" /etc/default/hextunnel-slowdns
+    sed -i -E "s/^SLOWDNS_LISTEN_PORT=.*/SLOWDNS_LISTEN_PORT=$port/" /etc/default/hextunnel-slowdns
+  fi
   safe_restart_service server-sldns "test -s /etc/default/hextunnel-slowdns"
 }
 
@@ -111,9 +118,17 @@ slowdns_validate() {
 }
 
 slowdns_doctor() {
-  local port=53
-  [[ -r /etc/default/hextunnel-slowdns ]] && port="$(. /etc/default/hextunnel-slowdns; printf '%s' "$SLOWDNS_LISTEN_PORT")"
-  printf 'service=%s port=%s:' "$(systemctl is-active server-sldns 2>/dev/null || true)" "$port"
-  port_is_listening udp "$port" && printf open || printf closed
+  local address="" port=53 failed=0
+  if [[ -r /etc/default/hextunnel-slowdns ]]; then
+    # shellcheck disable=SC1091
+    source /etc/default/hextunnel-slowdns
+    address="$SLOWDNS_LISTEN_ADDRESS"
+    port="$SLOWDNS_LISTEN_PORT"
+  fi
+  printf 'service=%s listener=%s:%s:' "$(systemctl is-active server-sldns 2>/dev/null || true)" "${address:-unknown}" "$port"
+  systemctl is-active --quiet server-sldns || failed=1
+  if port_is_listening udp "$port" "$([[ "$address" == 127.* ]] && printf any || printf public)"; then printf open; else printf closed; failed=1; fi
   printf ' public-key=%s\n' "$(head -c 16 /etc/slowdns/server.pub 2>/dev/null || printf missing)"
+  [[ -s /etc/slowdns/server.pub ]] || failed=1
+  return "$failed"
 }
