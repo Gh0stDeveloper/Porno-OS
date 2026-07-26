@@ -1,0 +1,54 @@
+name: Patch runtime compatibility
+on:
+  push:
+    branches: [feat/transactional-architecture]
+    paths: [.patch-runtime-compat]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/transactional-architecture
+          fetch-depth: 0
+      - name: Apply reviewed Bash compatibility fixes
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          sed -i 's|exec "$binary" -F /etc/sslh/hextunnel.cfg|exec "$binary" --config /etc/sslh/hextunnel.cfg|' modules/ssh.sh
+
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('modules/hysteria2.sh')
+          text = path.read_text()
+          old = '''  [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] || \\
+            install -m 640 -o root -g hextunnel-hysteria2 /etc/hysteria2/users.txt /etc/hysteria2/users.txt
+          '''
+          new = '''  if [[ "${HEXTUNNEL_DRY_RUN:-0}" != 1 ]]; then
+            chown root:hextunnel-hysteria2 /etc/hysteria2/users.txt
+            chmod 640 /etc/hysteria2/users.txt
+          fi
+          '''
+          if old not in text:
+              raise SystemExit('Hysteria 2 permission block not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+
+          grep -q 'exec "$binary" --config /etc/sslh/hextunnel.cfg' modules/ssh.sh
+          grep -q 'chown root:hextunnel-hysteria2 /etc/hysteria2/users.txt' modules/hysteria2.sh
+          ! grep -q 'users.txt /etc/hysteria2/users.txt' modules/hysteria2.sh
+
+          find install.sh bin lib modules tests -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+          bash tests/unit/test-core.sh
+          bash tests/unit/test-module-contract.sh
+          bash tests/security/test-hardening.sh
+
+          rm -f .github/workflows/patch-runtime-compat.yml .patch-runtime-compat
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'fix: support SSLH 1.20 and Hysteria 2 ownership'
+          git push origin HEAD:feat/transactional-architecture
