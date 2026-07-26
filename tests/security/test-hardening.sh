@@ -35,4 +35,5 @@ grep -q "grep -Eq '\^\[0-9a-f\]{32}\$'" modules/slipstream.sh
 grep -q "write_file /etc/dnsdist/dnsdist.conf 644" modules/slipstream.sh
 grep -q "SuffixMatchNodeRule(slowdnsSuffixes)" modules/slipstream.sh
 grep -q "dnsdist -C /etc/dnsdist/dnsdist.conf --check-config" modules/slipstream.sh
+grep -q -- "--dns-listen-host 127.0.0.1 --dns-listen-port 5300" modules/slipstream.sh
 printf 'hardening invariants: ok\n'
