@@ -64,6 +64,13 @@ port_is_listening() {
 
 module_allows_existing_listener() {
   local module="$1" protocol="$2" port="$3" owner="$4" function
+
+  # Existing OpenSSH installations may be owned by sshd directly or by
+  # systemd socket activation. Only tcp/22 receives this built-in exception.
+  if [[ "$module" == ssh && "$protocol" == tcp && "$port" == 22 ]]; then
+    [[ "$owner" == *sshd* || "$owner" == *systemd* ]] && return 0
+  fi
+
   function="$(module_function "$module" allow_port_conflict)"
   declare -F "$function" >/dev/null 2>&1 || return 1
   "$function" "$protocol" "$port" "$owner"
