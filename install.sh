@@ -41,6 +41,7 @@ source "$SCRIPT_DIR/lib/backup.sh"
 source "$SCRIPT_DIR/lib/rollback.sh"
 source "$SCRIPT_DIR/lib/systemd.sh"
 source "$SCRIPT_DIR/lib/firewall.sh"
+source "$SCRIPT_DIR/lib/nat.sh"
 source "$SCRIPT_DIR/lib/secrets.sh"
 source "$SCRIPT_DIR/lib/validation.sh"
 source "$SCRIPT_DIR/lib/modules.sh"
@@ -60,7 +61,7 @@ Módulos:
 
 Opciones:
   --dry-run          Mostrar acciones sin modificar el VPS.
-  --non-interactive  No solicitar datos; usar configuración/entorno.
+  --non-interactive  No solicitar datos; requiere --modules o nombres explícitos.
   --no-reboot        No reiniciar el VPS al finalizar.
   --force            Permitir reemplazar instalaciones existentes.
   --help             Mostrar esta ayuda.
@@ -126,9 +127,13 @@ EOF
 
 install_selected_modules() {
   local module answer
-  ((${#HEXTUNNEL_REQUESTED_MODULES[@]} > 0)) || {
-    if [[ "$HEXTUNNEL_NON_INTERACTIVE" == 1 ]]; then HEXTUNNEL_REQUESTED_MODULES=(ssh xray hysteria2 slowdns slipstream zivpn); else select_modules_interactively; fi
-  }
+  if ((${#HEXTUNNEL_REQUESTED_MODULES[@]} == 0)); then
+    if [[ "$HEXTUNNEL_NON_INTERACTIVE" == 1 ]]; then
+      die "En modo no interactivo indica módulos, por ejemplo: --modules=ssh,xray,hysteria2"
+    fi
+    select_modules_interactively
+  fi
+  ((${#HEXTUNNEL_REQUESTED_MODULES[@]} > 0)) || die "No seleccionaste ningún módulo."
   resolve_module_dependencies HEXTUNNEL_REQUESTED_MODULES
   preflight_all "${HEXTUNNEL_REQUESTED_MODULES[@]}"
   load_hextunnel_secrets
