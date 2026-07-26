@@ -67,6 +67,8 @@ jobs:
           sudo systemctl is-active --quiet hextunnel-haproxy
           sudo systemctl is-active --quiet hysteria2
           sudo sshd -t
+          sudo ss -H -ltn 'sport = :22' | grep -q .
+          sudo ss -H -ltn 'sport = :299' | grep -q .
           sudo /usr/local/bin/xray run -test -config /etc/xray/config.json
           sudo haproxy -c -f /etc/hextunnel/haproxy-xray.cfg
           sudo runuser -u sslh -- test -r /etc/sslh/hextunnel.cfg
@@ -96,14 +98,17 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          sudo hextunnel uninstall hysteria2 xray ssh
-          test ! -e /etc/systemd/system/hysteria2.service
-          test ! -e /etc/systemd/system/xray.service
-          test ! -e /etc/systemd/system/hextunnel-sslh.service
-          test ! -e /etc/ssh/sshd_config.d/90-hextunnel.conf
-          test ! -e /var/lib/hextunnel/modules/hysteria2
-          test ! -e /var/lib/hextunnel/modules/xray
-          test ! -e /var/lib/hextunnel/modules/ssh
+          {
+            sudo hextunnel uninstall hysteria2 xray ssh
+            test ! -e /etc/systemd/system/hysteria2.service
+            test ! -e /etc/systemd/system/xray.service
+            test ! -e /etc/systemd/system/hextunnel-sslh.service
+            test ! -e /etc/ssh/sshd_config.d/90-hextunnel.conf
+            test ! -e /var/lib/hextunnel/modules/hysteria2
+            test ! -e /var/lib/hextunnel/modules/xray
+            test ! -e /var/lib/hextunnel/modules/ssh
+            sudo ss -H -ltn 'sport = :22' | grep -q .
+          } 2>&1 | tee /tmp/hextunnel-uninstall.log
 
       - name: Collect service diagnostics
         if: always()
@@ -113,7 +118,7 @@ jobs:
           {
             echo '=== systemctl failed ==='
             sudo systemctl --failed --no-pager
-            for unit in ssh stunnel4 sslh hextunnel-sslh fail2ban xray hextunnel-haproxy hysteria2; do
+            for unit in ssh ssh.socket stunnel4 sslh hextunnel-sslh fail2ban xray hextunnel-haproxy hysteria2; do
               echo
               echo "=== $unit ==="
               sudo systemctl status "$unit" --no-pager -l
@@ -123,6 +128,7 @@ jobs:
           sudo chmod 644 /tmp/hextunnel-doctor.txt 2>/dev/null || true
           sudo chmod 644 /tmp/account-create.txt 2>/dev/null || true
           sudo chmod 644 /tmp/hextunnel-install.log 2>/dev/null || true
+          sudo chmod 644 /tmp/hextunnel-uninstall.log 2>/dev/null || true
 
       - name: Upload integration diagnostics
         if: always()
@@ -132,6 +138,7 @@ jobs:
           path: |
             /tmp/vm-integration.log
             /tmp/hextunnel-install.log
+            /tmp/hextunnel-uninstall.log
             /tmp/hextunnel-doctor.txt
             /tmp/account-create.txt
           if-no-files-found: warn
