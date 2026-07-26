@@ -110,7 +110,9 @@ def bash_syntax_ok(content: str) -> bool:
         temp_path = Path(handle.name)
     try:
         result = run(["bash", "-n", str(temp_path)])
-        return result.returncode == 0
+        stderr = result.stderr.lower()
+        incomplete_heredoc = "here-document" in stderr and "delimited by end-of-file" in stderr
+        return result.returncode == 0 and not incomplete_heredoc
     finally:
         temp_path.unlink(missing_ok=True)
 
