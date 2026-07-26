@@ -25,13 +25,23 @@ ssh_install_packages() {
     openssh-server stunnel4 sslh nodejs openssl ca-certificates fail2ban
 }
 
+ssh_certificate_common_name() {
+  local value="${HEXTUNNEL_DOMAIN:-$(hostname -s 2>/dev/null || hostname)}"
+  value="${value//[^A-Za-z0-9.-]/-}"
+  value="${value:0:64}"
+  [[ -n "$value" ]] || value=hextunnel.local
+  printf '%s' "$value"
+}
+
 ssh_ensure_certificate() {
   ensure_dir 700 /etc/xray
   if [[ -s /etc/xray/xray.crt && -s /etc/xray/xray.key ]]; then
     return 0
   fi
   backup_paths /etc/xray/xray.crt /etc/xray/xray.key
-  local subject="/CN=${HEXTUNNEL_DOMAIN:-$(hostname -f 2>/dev/null || hostname)}/O=HexTunnel"
+  local common_name subject
+  common_name="$(ssh_certificate_common_name)"
+  subject="/CN=$common_name/O=HexTunnel"
   run_cmd openssl req -x509 -nodes -days 825 -newkey rsa:3072 \
     -keyout /etc/xray/xray.key -out /etc/xray/xray.crt -subj "$subject"
   [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] || chmod 600 /etc/xray/xray.key
@@ -143,7 +153,7 @@ set -Eeuo pipefail
 for binary in /usr/sbin/sslh-select /usr/sbin/sslh-fork /usr/sbin/sslh; do
   [[ -x "$binary" ]] || continue
   exec "$binary" -F /etc/hextunnel/sslh.cfg
- done
+done
 echo "No se encontró un binario SSLH compatible." >&2
 exit 127
 EOF
