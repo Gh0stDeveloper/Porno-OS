@@ -33,6 +33,10 @@ class ModularizationTests(unittest.TestCase):
             "My_Chat_ID='123456789'\n",
             f"My_Bot_Key='{token}'\n",
             "\n",
+            "cat << EOF > /etc/hysteria/hysteria.crt\n",
+            "-----BEGIN CERTIFICATE-----\ncertificate-body\n-----END CERTIFICATE-----\nEOF\n\n",
+            "cat << EOF > /etc/hysteria/hysteria.key\n",
+            ("-----BEGIN " + "PRIVATE KEY-----\nprivate-body\n-----END PRIVATE KEY-----\nEOF\n\n"),
         ]
         for index in range(8):
             body.extend(
@@ -88,6 +92,19 @@ class ModularizationTests(unittest.TestCase):
             self.assertEqual(stat.S_IMODE(secrets.stat().st_mode), 0o600)
             syntax = subprocess.run(["bash", "-n", str(temp / "install.sh")], check=False)
             self.assertEqual(syntax.returncode, 0)
+
+    def test_embedded_hysteria_key_is_replaced(self) -> None:
+        private_block = "-----BEGIN " + "PRIVATE KEY-----\nprivate-body\n-----END PRIVATE KEY-----\nEOF\n"
+        original = (
+            "cat << EOF > /etc/hysteria/hysteria.crt\n"
+            "-----BEGIN CERTIFICATE-----\ncertificate-body\n-----END CERTIFICATE-----\nEOF\n\n"
+            "cat << EOF > /etc/hysteria/hysteria.key\n"
+            + private_block
+        )
+        migrated = MODULARIZE.migrate_hysteria_tls(original)
+        self.assertNotIn("BEGIN " + "PRIVATE KEY", migrated)
+        self.assertIn("ln -s /etc/xray/xray.crt", migrated)
+        self.assertIn("ln -s /etc/xray/xray.key", migrated)
 
     def test_incomplete_heredoc_is_rejected(self) -> None:
         fragment = "cat <<'EOF_SAMPLE'\nunterminated\n"
