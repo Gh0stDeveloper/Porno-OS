@@ -9,6 +9,14 @@ on:
       - modules/**
       - templates/**
       - .github/workflows/vm-integration.yml
+  pull_request:
+    paths:
+      - install.sh
+      - bin/**
+      - lib/**
+      - modules/**
+      - templates/**
+      - .github/workflows/vm-integration.yml
   workflow_dispatch:
 permissions:
   contents: read
