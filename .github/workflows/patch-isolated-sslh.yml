@@ -1,0 +1,89 @@
+name: Patch isolated SSLH service
+on:
+  push:
+    branches: [feat/transactional-architecture]
+    paths: [.patch-isolated-sslh]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/transactional-architecture
+          fetch-depth: 0
+      - name: Replace distribution SSLH service with isolated unit
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          file=modules/ssh.sh
+          start="$(grep -n '^  write_file /etc/default/sslh ' "$file" | cut -d: -f1)"
+          [[ "$start" =~ ^[0-9]+$ ]]
+          relative_end="$(tail -n +"$start" "$file" | grep -n '^EOF$' | head -n1 | cut -d: -f1)"
+          [[ "$relative_end" =~ ^[0-9]+$ ]]
+          end=$((start + relative_end - 1))
+          tmp="$(mktemp)"
+          head -n $((start - 1)) "$file" > "$tmp"
+          cat >> "$tmp" <<'BLOCK'
+          safe_stop_disable_service sslh
+          write_file /usr/local/sbin/hextunnel-sslh 755 <<'EOF'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          for binary in /usr/sbin/sslh-select /usr/sbin/sslh-fork /usr/sbin/sslh; do
+            [[ -x "$binary" ]] || continue
+            exec "$binary" -f \
+              --listen 127.0.0.1:666 \
+              --ssh 127.0.0.1:22 \
+              --http 127.0.0.1:10080
+          done
+          echo "No se encontró un binario SSLH compatible." >&2
+          exit 127
+          EOF
+          install_systemd_unit hextunnel-sslh.service 644 <<'EOF'
+          [Unit]
+          Description=Hex Tunnel SSL/SSH protocol multiplexer
+          After=network-online.target ssh.service
+          Wants=network-online.target
+
+          [Service]
+          Type=simple
+          User=sslh
+          Group=sslh
+          ExecStart=/usr/local/sbin/hextunnel-sslh
+          Restart=on-failure
+          RestartSec=2s
+          NoNewPrivileges=true
+          PrivateTmp=true
+          ProtectHome=true
+          ProtectSystem=strict
+          ProtectKernelTunables=true
+          ProtectKernelModules=true
+          ProtectControlGroups=true
+          RestrictAddressFamilies=AF_INET AF_INET6
+
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+BLOCK
+          tail -n +$((end + 1)) "$file" >> "$tmp"
+          mv "$tmp" "$file"
+
+          sed -i 's|    /etc/default/sslh \\|    /usr/local/sbin/hextunnel-sslh \\\n    /etc/systemd/system/hextunnel-sslh.service \\|' "$file"
+          sed -i 's/safe_restart_service sslh "test -s \/etc\/default\/sslh"/safe_restart_service hextunnel-sslh "test -x \/usr\/local\/sbin\/hextunnel-sslh"/' "$file"
+          sed -i 's/safe_stop_disable_service sslh$/safe_stop_disable_service hextunnel-sslh/' "$file"
+
+          grep -q 'install_systemd_unit hextunnel-sslh.service' "$file"
+          grep -q 'safe_restart_service hextunnel-sslh' "$file"
+          ! grep -q 'write_file /etc/default/sslh' "$file"
+          find install.sh bin lib modules tests -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+          bash tests/unit/test-core.sh
+          bash tests/unit/test-module-contract.sh
+          bash tests/security/test-hardening.sh
+
+          rm -f .github/workflows/patch-isolated-sslh.yml .patch-isolated-sslh
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'fix: isolate SSLH from distribution-specific defaults'
+          git push origin HEAD:feat/transactional-architecture
