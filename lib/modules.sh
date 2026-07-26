@@ -7,6 +7,11 @@ declare -A HEXTUNNEL_MODULE_RESOLVED=()
 declare -A HEXTUNNEL_MODULE_RESOLVING=()
 HEXTUNNEL_RESOLVED_ORDER=()
 
+if [[ -r "$HEXTUNNEL_ROOT/lib/ssh-mode.sh" ]]; then
+  # shellcheck disable=SC1091
+  source "$HEXTUNNEL_ROOT/lib/ssh-mode.sh"
+fi
+
 load_module_registry() {
   local module file
   for module in "${HEXTUNNEL_AVAILABLE_MODULES[@]}"; do
@@ -87,8 +92,18 @@ module_is_installed() {
 module_install() {
   local module="$1"
   log_info "Instalando módulo: $module"
+
+  if [[ "$module" == ssh ]]; then
+    ssh_capture_socket_mode
+  fi
+
   firewall_apply_module_ports "$module"
   module_call "$module" install
+
+  if [[ "$module" == ssh ]]; then
+    ssh_switch_to_service_mode
+  fi
+
   module_validate "$module"
   module_mark_installed "$module"
   log_success "Módulo instalado: $module"
@@ -98,6 +113,11 @@ module_uninstall() {
   local module="$1"
   log_warn "Desinstalando módulo: $module"
   module_call "$module" uninstall
+
+  if [[ "$module" == ssh ]]; then
+    ssh_restore_socket_mode
+  fi
+
   module_mark_uninstalled "$module"
   log_success "Módulo desinstalado: $module"
 }
