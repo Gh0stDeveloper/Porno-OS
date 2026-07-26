@@ -7,10 +7,31 @@ nat_primary_interface() {
 nat_profile_values() {
   local profile="$1"
   case "$profile" in
-    zivpn) printf '%s\n' '6000 19999 5667 ' ;;
-    hysteria1) printf '%s\n' '20000 50000 36712 36713' ;;
+    zivpn)
+      printf '%s %s %s %s\n' \
+        "${HEXTUNNEL_ZIVPN_NAT_START:-6000}" \
+        "${HEXTUNNEL_ZIVPN_NAT_END:-19999}" \
+        "${HEXTUNNEL_ZIVPN_PORT:-5667}" \
+        "${HEXTUNNEL_ZIVPN_NAT_EXEMPT:-}"
+      ;;
+    hysteria1)
+      printf '%s %s %s %s\n' \
+        "${HEXTUNNEL_HYSTERIA1_NAT_START:-20000}" \
+        "${HEXTUNNEL_HYSTERIA1_NAT_END:-50000}" \
+        "${HEXTUNNEL_HYSTERIA1_PORT:-36712}" \
+        "${HEXTUNNEL_HYSTERIA1_NAT_EXEMPT:-36713}"
+      ;;
     *) die "Perfil NAT desconocido: $profile" ;;
   esac
+}
+
+nat_validate_values() {
+  local start="$1" end="$2" target="$3" exempt="${4:-}"
+  [[ "$start" =~ ^[0-9]+$ && "$end" =~ ^[0-9]+$ && "$target" =~ ^[0-9]+$ ]] || die "El perfil NAT contiene puertos no numéricos."
+  ((start >= 1 && start <= 65535 && end >= start && end <= 65535 && target >= 1 && target <= 65535)) \
+    || die "El rango o destino NAT está fuera de límites."
+  [[ -z "$exempt" || "$exempt" =~ ^[0-9]+$ ]] || die "El puerto exento NAT no es numérico."
+  [[ -z "$exempt" || ( "$exempt" -ge 1 && "$exempt" -le 65535 ) ]] || die "El puerto exento NAT está fuera de límites."
 }
 
 nat_rule_tag() {
@@ -20,6 +41,7 @@ nat_rule_tag() {
 nat_apply() {
   local profile="$1" start end target exempt interface backend tag
   read -r start end target exempt < <(nat_profile_values "$profile")
+  nat_validate_values "$start" "$end" "$target" "$exempt"
   interface="$(nat_primary_interface)"
   [[ -n "$interface" ]] || die "No se pudo determinar la interfaz pública para NAT."
   backend="$(firewall_backend)"
@@ -51,6 +73,7 @@ nat_apply() {
 nat_remove() {
   local profile="$1" start end target exempt interface backend tag handle
   read -r start end target exempt < <(nat_profile_values "$profile")
+  nat_validate_values "$start" "$end" "$target" "$exempt"
   interface="$(nat_primary_interface)"
   backend="$(firewall_backend)"
   tag="$(nat_rule_tag "$profile")"
@@ -60,7 +83,7 @@ nat_remove() {
       while read -r handle; do
         [[ "$handle" =~ ^[0-9]+$ ]] || continue
         nft delete rule inet hextunnel_nat prerouting handle "$handle" >/dev/null 2>&1 || true
-      done < <(nft -a list chain inet hextunnel_nat prerouting 2>/dev/null | grep -F "comment \"$tag" | sed -n 's/.* handle \([0-9][0-9]*\)$/\1/p')
+      done < <({ nft -a list chain inet hextunnel_nat prerouting 2>/dev/null | grep -F "comment \"$tag" | sed -n 's/.* handle \([0-9][0-9]*\)$/\1/p'; } || true)
       ;;
     ufw|iptables)
       while iptables -t nat -C PREROUTING -i "$interface" -p udp --dport "$start:$end" -m comment --comment "$tag" -j DNAT --to-destination ":$target" 2>/dev/null; do
