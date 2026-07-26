@@ -44,6 +44,7 @@ source "$SCRIPT_DIR/lib/firewall.sh"
 source "$SCRIPT_DIR/lib/secrets.sh"
 source "$SCRIPT_DIR/lib/validation.sh"
 source "$SCRIPT_DIR/lib/modules.sh"
+source "$SCRIPT_DIR/lib/framework.sh"
 
 usage() {
   cat <<'EOF'
@@ -73,11 +74,7 @@ parse_arguments() {
   HEXTUNNEL_NO_REBOOT="${HEXTUNNEL_NO_REBOOT:-0}"
   HEXTUNNEL_FORCE="${HEXTUNNEL_FORCE:-0}"
   HEXTUNNEL_REQUESTED_MODULES=()
-
-  if (($# > 0)) && [[ "$1" != --* ]]; then
-    HEXTUNNEL_COMMAND="$1"
-    shift
-  fi
+  if (($# > 0)) && [[ "$1" != --* ]]; then HEXTUNNEL_COMMAND="$1"; shift; fi
   while (($# > 0)); do
     case "$1" in
       --dry-run) HEXTUNNEL_DRY_RUN=1 ;;
@@ -130,11 +127,7 @@ EOF
 install_selected_modules() {
   local module answer
   ((${#HEXTUNNEL_REQUESTED_MODULES[@]} > 0)) || {
-    if [[ "$HEXTUNNEL_NON_INTERACTIVE" == 1 ]]; then
-      HEXTUNNEL_REQUESTED_MODULES=(ssh xray hysteria2 slowdns slipstream zivpn)
-    else
-      select_modules_interactively
-    fi
+    if [[ "$HEXTUNNEL_NON_INTERACTIVE" == 1 ]]; then HEXTUNNEL_REQUESTED_MODULES=(ssh xray hysteria2 slowdns slipstream zivpn); else select_modules_interactively; fi
   }
   resolve_module_dependencies HEXTUNNEL_REQUESTED_MODULES
   preflight_all "${HEXTUNNEL_REQUESTED_MODULES[@]}"
@@ -142,6 +135,7 @@ install_selected_modules() {
   transaction_begin "install-$(join_by - "${HEXTUNNEL_REQUESTED_MODULES[@]}")"
   trap 'transaction_fail "$?" "$BASH_LINENO" "$BASH_COMMAND"' ERR INT TERM
   firewall_snapshot
+  install_framework
   for module in "${HEXTUNNEL_REQUESTED_MODULES[@]}"; do module_install "$module"; done
   validate_selected_modules "${HEXTUNNEL_REQUESTED_MODULES[@]}"
   transaction_commit
@@ -160,9 +154,7 @@ install_selected_modules() {
 uninstall_selected_modules() {
   require_root
   ((${#HEXTUNNEL_REQUESTED_MODULES[@]} > 0)) || die "Indica un módulo o --all."
-  if [[ "${HEXTUNNEL_REQUESTED_MODULES[0]}" == --all ]]; then
-    HEXTUNNEL_REQUESTED_MODULES=(webmin zivpn slipstream slowdns hysteria2 xray ssh)
-  fi
+  if [[ "${HEXTUNNEL_REQUESTED_MODULES[0]}" == --all ]]; then HEXTUNNEL_REQUESTED_MODULES=(webmin zivpn slipstream slowdns hysteria2 xray ssh); fi
   transaction_begin "uninstall-$(join_by - "${HEXTUNNEL_REQUESTED_MODULES[@]}")"
   trap 'transaction_fail "$?" "$BASH_LINENO" "$BASH_COMMAND"' ERR INT TERM
   local module
