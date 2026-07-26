@@ -44,7 +44,7 @@ nat_apply() {
   nat_validate_values "$start" "$end" "$target" "$exempt"
   interface="$(nat_primary_interface)"
   [[ -n "$interface" ]] || die "No se pudo determinar la interfaz pública para NAT."
-  backend="$(firewall_backend)"
+  backend="$(firewall_backend)" || die "No existe un backend de firewall preparado."
   tag="$(nat_rule_tag "$profile")"
   log_info "NAT $profile: UDP $start-$end -> $target mediante $backend"
   [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] && return 0
@@ -56,16 +56,17 @@ nat_apply() {
       if [[ -n "$exempt" ]] && ! nft -a list chain inet hextunnel_nat prerouting | grep -Fq "comment \"${tag}:exempt\""; then
         nft add rule inet hextunnel_nat prerouting iifname "$interface" udp dport "$exempt" return comment "${tag}:exempt"
       fi
-      nft -a list chain inet hextunnel_nat prerouting | grep -Fq "comment \"$tag\"" \
-        || nft add rule inet hextunnel_nat prerouting iifname "$interface" udp dport "$start-$end" dnat to ":$target" comment "$tag"
+      if ! nft -a list chain inet hextunnel_nat prerouting | grep -Fq "comment \"$tag\""; then
+        nft add rule inet hextunnel_nat prerouting iifname "$interface" udp dport "$start-$end" dnat to ":$target" comment "$tag"
+      fi
       ;;
     ufw|iptables)
-      if [[ -n "$exempt" ]]; then
-        iptables -t nat -C PREROUTING -i "$interface" -p udp --dport "$exempt" -m comment --comment "${tag}:exempt" -j RETURN 2>/dev/null \
-          || iptables -t nat -I PREROUTING 1 -i "$interface" -p udp --dport "$exempt" -m comment --comment "${tag}:exempt" -j RETURN
+      if [[ -n "$exempt" ]] && ! iptables -t nat -C PREROUTING -i "$interface" -p udp --dport "$exempt" -m comment --comment "${tag}:exempt" -j RETURN 2>/dev/null; then
+        iptables -t nat -I PREROUTING 1 -i "$interface" -p udp --dport "$exempt" -m comment --comment "${tag}:exempt" -j RETURN
       fi
-      iptables -t nat -C PREROUTING -i "$interface" -p udp --dport "$start:$end" -m comment --comment "$tag" -j DNAT --to-destination ":$target" 2>/dev/null \
-        || iptables -t nat -A PREROUTING -i "$interface" -p udp --dport "$start:$end" -m comment --comment "$tag" -j DNAT --to-destination ":$target"
+      if ! iptables -t nat -C PREROUTING -i "$interface" -p udp --dport "$start:$end" -m comment --comment "$tag" -j DNAT --to-destination ":$target" 2>/dev/null; then
+        iptables -t nat -A PREROUTING -i "$interface" -p udp --dport "$start:$end" -m comment --comment "$tag" -j DNAT --to-destination ":$target"
+      fi
       ;;
   esac
 }
@@ -75,7 +76,7 @@ nat_remove() {
   read -r start end target exempt < <(nat_profile_values "$profile")
   nat_validate_values "$start" "$end" "$target" "$exempt"
   interface="$(nat_primary_interface)"
-  backend="$(firewall_backend)"
+  backend="$(firewall_backend)" || return 0
   tag="$(nat_rule_tag "$profile")"
   [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] && { log_dry "eliminar NAT $profile"; return 0; }
   case "$backend" in
@@ -99,11 +100,18 @@ nat_remove() {
 }
 
 nat_is_present() {
-  local profile="$1" tag backend
+  local profile="$1" tag backend output
   tag="$(nat_rule_tag "$profile")"
-  backend="$(firewall_backend)"
+  backend="$(firewall_backend 2>/dev/null)" || return 1
   case "$backend" in
-    nft) nft -a list chain inet hextunnel_nat prerouting 2>/dev/null | grep -Fq "comment \"$tag\"" ;;
-    ufw|iptables) iptables-save -t nat 2>/dev/null | grep -Fq -- "--comment $tag" ;;
+    nft)
+      output="$(nft -a list chain inet hextunnel_nat prerouting 2>/dev/null || true)"
+      if grep -Fq "comment \"$tag\"" <<< "$output"; then return 0; fi
+      ;;
+    ufw|iptables)
+      output="$(iptables-save -t nat 2>/dev/null || true)"
+      if grep -Fq -- "--comment $tag" <<< "$output"; then return 0; fi
+      ;;
   esac
+  return 1
 }
