@@ -235,8 +235,6 @@ WsPort='10080'
 MainPort='666' 
 
 read -p "Ingresa el Nameserver de SlowDNS (o presiona enter para el predeterminado): " -e -i "ns-miami.hexapps.app" Nameserver
-Serverkey='819d82813183e4be3ca1ad74387e47c0c993b81c601b2d1473a3f47731c404ae'
-Serverpub='7fbd1f8aa0abfe15a7903e837f78aba39cf61d36f183bd604daa2fe4ef3b7b59'
 
 SlowDNS_Internal_Port='5301'
 read -p "¿Deseas instalar SlipStream (túnel DNS adicional)? [y/N]: " -e -i "N" _install_slipstream
@@ -1266,15 +1264,25 @@ root hard nofile 1048576
 LIMITS
 
 # SLOWDNS
-rm -rf /etc/slowdns; mkdir -m 777 /etc/slowdns
-cat > /etc/slowdns/server.key << END
-$Serverkey
-END
-cat > /etc/slowdns/server.pub << END
-$Serverpub
-END
+rm -rf /etc/slowdns
+install -d -m 700 /etc/slowdns
 wget -q -O /etc/slowdns/sldns-server "https://raw.githubusercontent.com/fisabiliyusri/SLDNS/main/slowdns/sldns-server"
-chmod +x /etc/slowdns/server.key /etc/slowdns/server.pub /etc/slowdns/sldns-server
+chmod 755 /etc/slowdns/sldns-server
+if [[ -n "${HEXTUNNEL_SLOWDNS_SHA256:-}" ]]; then
+  printf "%s  %s\n" "$HEXTUNNEL_SLOWDNS_SHA256" /etc/slowdns/sldns-server | sha256sum -c - || exit 1
+else
+  echo "ADVERTENCIA: SlowDNS heredado se descargó sin checksum configurado."
+fi
+if /etc/slowdns/sldns-server -gen-key -privkey-file /etc/slowdns/server.key /etc/slowdns/server.pub >/dev/null 2>&1; then
+  :
+elif /etc/slowdns/sldns-server --gen-key --privkey-file /etc/slowdns/server.key --pubkey-file /etc/slowdns/server.pub >/dev/null 2>&1; then
+  :
+else
+  echo "ERROR: SlowDNS no pudo generar un par de claves único." >&2
+  exit 1
+fi
+chmod 600 /etc/slowdns/server.key
+chmod 644 /etc/slowdns/server.pub
 iptables -C INPUT -p udp --dport 53 -j ACCEPT 2>/dev/null || iptables -I INPUT -p udp --dport 53 -j ACCEPT
 
 if [ "$InstallSlipstream" = "y" ]; then
