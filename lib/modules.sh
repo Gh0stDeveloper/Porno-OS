@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-HEXTUNNEL_AVAILABLE_MODULES=(ssh xray hysteria2 slowdns slipstream zivpn webmin legacy-all)
+HEXTUNNEL_AVAILABLE_MODULES=(ssh xray hysteria hysteria2 udp-custom slowdns slipstream zivpn webmin legacy-all)
 HEXTUNNEL_MODULE_STATE_DIR="${HEXTUNNEL_MODULE_STATE_DIR:-$HEXTUNNEL_STATE/modules}"
 declare -A HEXTUNNEL_MODULE_FILES=()
 declare -A HEXTUNNEL_MODULE_RESOLVED=()
