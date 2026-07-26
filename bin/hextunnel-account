@@ -3,6 +3,7 @@ set -Eeuo pipefail
 ROOT="${HEXTUNNEL_INSTALL_DIR:-/opt/hextunnel}"
 [[ -f "$ROOT/lib/common.sh" ]] || ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 for file in common logging backup rollback systemd firewall secrets validation modules accounts; do
+  # shellcheck disable=SC1090
   source "$ROOT/lib/$file.sh"
 done
 HEXTUNNEL_DRY_RUN="${HEXTUNNEL_DRY_RUN:-0}"
@@ -14,12 +15,23 @@ load_module_registry
 
 usage() {
   cat <<'EOF'
-hextunnel-account create <ssh|vless|vmess|trojan|hysteria2|zivpn> <usuario> <YYYY-MM-DD> [max_sessions] [quota_mb] [speed_kbps]
+hextunnel-account create <ssh|vless|vmess|trojan|hysteria|hysteria2|zivpn> <usuario> <YYYY-MM-DD> [max_sessions] [quota_mb] [speed_kbps]
 hextunnel-account renew <protocolo> <usuario> <YYYY-MM-DD>
 hextunnel-account suspend <protocolo> <usuario>
+hextunnel-account resume <protocolo> <usuario>
 hextunnel-account delete <protocolo> <usuario>
 hextunnel-account list
 EOF
+}
+
+run_transactional_account_action() {
+  local action="$1" label="$2"
+  shift 2
+  transaction_begin "$label"
+  trap 'transaction_fail "$?" "$BASH_LINENO" "$BASH_COMMAND"' ERR INT TERM
+  "$action" "$@"
+  transaction_commit
+  trap - ERR INT TERM
 }
 
 command="${1:-help}"
@@ -27,37 +39,32 @@ shift || true
 case "$command" in
   create)
     (($# >= 3)) || { usage; exit 64; }
-    transaction_begin "account-create-$1-$2"
-    trap 'transaction_fail "$?" "$BASH_LINENO" "$BASH_COMMAND"' ERR INT TERM
-    account_create "$@"
-    transaction_commit
-    trap - ERR INT TERM
+    run_transactional_account_action account_create "account-create-$1-$2" "$@"
     ;;
   renew)
     (($# == 3)) || { usage; exit 64; }
-    transaction_begin "account-renew-$1-$2"
-    trap 'transaction_fail "$?" "$BASH_LINENO" "$BASH_COMMAND"' ERR INT TERM
-    account_renew "$@"
-    transaction_commit
-    trap - ERR INT TERM
+    run_transactional_account_action account_renew "account-renew-$1-$2" "$@"
     ;;
   suspend)
     (($# == 2)) || { usage; exit 64; }
-    transaction_begin "account-suspend-$1-$2"
-    trap 'transaction_fail "$?" "$BASH_LINENO" "$BASH_COMMAND"' ERR INT TERM
-    account_suspend "$@"
-    transaction_commit
-    trap - ERR INT TERM
+    run_transactional_account_action account_suspend "account-suspend-$1-$2" "$@"
+    ;;
+  resume)
+    (($# == 2)) || { usage; exit 64; }
+    run_transactional_account_action account_resume "account-resume-$1-$2" "$@"
     ;;
   delete)
     (($# == 2)) || { usage; exit 64; }
-    transaction_begin "account-delete-$1-$2"
-    trap 'transaction_fail "$?" "$BASH_LINENO" "$BASH_COMMAND"' ERR INT TERM
-    account_delete "$@"
-    transaction_commit
-    trap - ERR INT TERM
+    run_transactional_account_action account_delete "account-delete-$1-$2" "$@"
     ;;
-  list) account_list ;;
-  help|--help|-h) usage ;;
-  *) usage; exit 64 ;;
+  list)
+    account_list
+    ;;
+  help|--help|-h)
+    usage
+    ;;
+  *)
+    usage
+    exit 64
+    ;;
 esac
