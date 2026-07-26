@@ -87,7 +87,7 @@ slipstream_install() {
   common_name="${domain:0:64}"
 
   run_cmd apt-get update
-  run_cmd apt-get install -y git curl build-essential pkg-config libssl-dev dante-server dnsdist openssl ca-certificates
+  run_cmd apt-get install -y git curl build-essential cmake pkg-config libssl-dev dante-server dnsdist openssl ca-certificates
   ensure_system_user hextunnel-slipstream
   backup_paths "$install_dir" "$rust_root" /etc/danted.conf /etc/dnsdist/dnsdist.conf /etc/systemd/system/slipstream.service /etc/slipstream
   slipstream_install_rust_toolchain
