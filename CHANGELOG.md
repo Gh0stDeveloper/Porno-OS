@@ -8,9 +8,10 @@
 - Firewall reversible compatible con UFW, nftables e iptables.
 - Módulos SSH/TLS, Xray, Hysteria v1, Hysteria 2, UDP Custom, SlowDNS, SlipStream, ZiVPN y Webmin.
 - SSLH aislado de los defaults incompatibles de Debian/Ubuntu mediante una unidad y configuración propias.
+- Compatibilidad con SSLH 1.20 usando la forma estricta `-F/ruta` y con SSLH 1.22 en Ubuntu 24.04.
 - Generación TLS compatible con hostnames largos y validación OpenSSH portable.
 - HAProxy gRPC con PID dentro de su `RuntimeDirectory` de systemd.
-- Hysteria 2 con usuario dedicado, TLS privado y permisos de cuenta conservados.
+- Hysteria 2 con usuario dedicado, TLS privado, validación temporal controlada y permisos de cuenta conservados.
 - Centro `hextunnel doctor` y monitor periódico sanitizado.
 - Gestión centralizada de cuentas, expiración, suspensión, reanudación y auditoría.
 - Actualizador por canales con manifiesto firmado y SHA-256.
