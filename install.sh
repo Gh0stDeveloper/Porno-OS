@@ -1415,9 +1415,9 @@ mkdir -p /etc/hysteria
 HYST_PORT="${UDP_PORT##*:}"
 
 # Reuse the per-server Xray certificate instead of a shared embedded key.
-rm -f /etc/hysteria/hysteria.crt /etc/hysteria/hysteria.key
-ln -s /etc/xray/xray.crt /etc/hysteria/hysteria.crt
-ln -s /etc/xray/xray.key /etc/hysteria/hysteria.key
+# Copies avoid permission changes propagating through symbolic links.
+install -m 0644 /etc/xray/xray.crt /etc/hysteria/hysteria.crt
+install -m 0600 /etc/xray/xray.key /etc/hysteria/hysteria.key
 cat > /etc/hysteria/config.json <<EOF
 {
   "log": { "level": "fatal" },
@@ -1458,7 +1458,8 @@ cat > /etc/hysteria/config.json <<EOF
 }
 EOF
 
-chmod 755 /etc/hysteria/config.json /etc/hysteria/hysteria.crt /etc/hysteria/hysteria.key
+chmod 600 /etc/hysteria/config.json /etc/hysteria/hysteria.key
+chmod 644 /etc/hysteria/hysteria.crt
 echo "$PASSWORD $(date -d "+365 days" +"%Y-%m-%d")" > /etc/hysteria/users.txt
 
 cat > /etc/systemd/system/hysteria-server.service <<EOF
