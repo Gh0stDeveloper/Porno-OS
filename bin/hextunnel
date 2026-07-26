@@ -30,7 +30,7 @@ doctor_dns() {
   printf 'IP pública: %s\n' "${public_ip:-no disponible}"
   domain="${HEXTUNNEL_DOMAIN:-}"
   if [[ -n "$domain" ]]; then
-    value="$(getent ahostsv4 "$domain" 2>/dev/null | awk 'NR==1 {print $1}')"
+    value="$(getent ahostsv4 "$domain" 2>/dev/null | awk 'NR==1 {print $1}' || true)"
     printf 'DNS A %s: %s' "$domain" "${value:-sin resolución}"
     [[ -n "$public_ip" && "$value" == "$public_ip" ]] && printf ' [correcto]' || true
     printf '\n'
@@ -38,7 +38,7 @@ doctor_dns() {
   if [[ -n "${HEXTUNNEL_SLOWDNS_NS:-}" ]]; then
     printf 'SlowDNS NS %s: ' "$HEXTUNNEL_SLOWDNS_NS"
     if command_exists dig; then
-      dig +short NS "$HEXTUNNEL_SLOWDNS_NS" 2>/dev/null | paste -sd ',' -
+      { dig +short NS "$HEXTUNNEL_SLOWDNS_NS" 2>/dev/null || true; } | paste -sd ',' -
     else
       printf 'dig no instalado'
     fi
@@ -47,7 +47,7 @@ doctor_dns() {
   if [[ -n "${HEXTUNNEL_SLIPSTREAM_DOMAIN:-}" ]]; then
     printf 'SlipStream NS %s: ' "$HEXTUNNEL_SLIPSTREAM_DOMAIN"
     if command_exists dig; then
-      dig +short NS "$HEXTUNNEL_SLIPSTREAM_DOMAIN" 2>/dev/null | paste -sd ',' -
+      { dig +short NS "$HEXTUNNEL_SLIPSTREAM_DOMAIN" 2>/dev/null || true; } | paste -sd ',' -
     else
       printf 'dig no instalado'
     fi
@@ -56,22 +56,53 @@ doctor_dns() {
 }
 
 doctor_certificates() {
-  local certificate
-  find /etc/xray /etc/hysteria2 /etc/zivpn /etc/slipstream -maxdepth 2 -type f \
-    \( -name '*.crt' -o -name '*.pem' \) -print 2>/dev/null \
-    | sort -u \
-    | while IFS= read -r certificate; do
-        printf '%s: ' "$certificate"
-        openssl x509 -in "$certificate" -noout -subject -issuer -enddate 2>/dev/null \
-          | paste -sd ' ' - \
-          || printf 'certificado inválido'
-        if openssl x509 -in "$certificate" -checkend 604800 -noout >/dev/null 2>&1; then
-          printf ' [vigente >7d]'
-        else
-          printf ' [expira o inválido <7d]'
-        fi
-        printf '\n'
-      done
+  local certificate directory
+  local directories=()
+  for directory in /etc/xray /etc/hysteria2 /etc/zivpn /etc/slipstream; do
+    [[ -d "$directory" ]] && directories+=("$directory")
+  done
+  if ((${#directories[@]} == 0)); then
+    printf 'No se encontraron directorios de certificados administrados.\n'
+    return 0
+  fi
+  while IFS= read -r certificate; do
+    [[ -n "$certificate" ]] || continue
+    printf '%s: ' "$certificate"
+    if openssl x509 -in "$certificate" -noout -subject -issuer -enddate 2>/dev/null \
+      | paste -sd ' ' -; then
+      :
+    else
+      printf 'certificado inválido'
+    fi
+    if openssl x509 -in "$certificate" -checkend 604800 -noout >/dev/null 2>&1; then
+      printf ' [vigente >7d]'
+    else
+      printf ' [expira o inválido <7d]'
+    fi
+    printf '\n'
+  done < <(
+    find "${directories[@]}" -maxdepth 2 -type f \
+      \( -name '*.crt' -o -name '*.pem' \) -print 2>/dev/null | sort -u
+  )
+}
+
+doctor_transactions() {
+  local transaction count=0
+  if [[ ! -d "$HEXTUNNEL_STATE/transactions" ]]; then
+    printf 'No se encontraron transacciones.\n'
+    return 0
+  fi
+  while IFS= read -r transaction; do
+    [[ -n "$transaction" ]] || continue
+    printf '%s status=%s\n' \
+      "$(basename "$transaction")" \
+      "$(cat "$transaction/status" 2>/dev/null || printf UNKNOWN)"
+    count=$((count + 1))
+    ((count >= 10)) && break
+  done < <(
+    find "$HEXTUNNEL_STATE/transactions" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | sort -r
+  )
+  ((count > 0)) || printf 'No se encontraron transacciones.\n'
 }
 
 doctor() {
@@ -116,16 +147,14 @@ doctor() {
       module_is_installed "$module" || continue
       checked=$((checked + 1))
       printf '[%s] ' "$module"
-      if ! module_doctor "$module"; then status=1; fi
+      if ! module_doctor "$module"; then
+        status=1
+      fi
     done
     ((checked > 0)) || echo "Ningún módulo registrado."
     echo
     echo "Transacciones recientes:"
-    find "$HEXTUNNEL_STATE/transactions" -mindepth 1 -maxdepth 1 -type d 2>/dev/null \
-      | sort -r | head -n 10 \
-      | while read -r transaction; do
-          printf '%s status=%s\n' "$(basename "$transaction")" "$(cat "$transaction/status" 2>/dev/null || printf UNKNOWN)"
-        done
+    doctor_transactions
     echo
     echo "Errores recientes de systemd:"
     journalctl -p err -n 80 --no-pager 2>/dev/null || true
