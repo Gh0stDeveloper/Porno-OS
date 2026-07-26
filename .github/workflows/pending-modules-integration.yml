@@ -1,0 +1,258 @@
+name: Pending modules integration
+on:
+  push:
+    branches: [feat/transactional-architecture]
+    paths:
+      - install.sh
+      - bin/**
+      - lib/**
+      - modules/hysteria.sh
+      - modules/udp-custom.sh
+      - modules/slowdns.sh
+      - modules/zivpn.sh
+      - modules/webmin.sh
+      - .github/workflows/pending-modules-integration.yml
+  pull_request:
+    paths:
+      - install.sh
+      - bin/**
+      - lib/**
+      - modules/hysteria.sh
+      - modules/udp-custom.sh
+      - modules/slowdns.sh
+      - modules/zivpn.sh
+      - modules/webmin.sh
+      - .github/workflows/pending-modules-integration.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  module-integration:
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        runner: [ubuntu-22.04, ubuntu-24.04]
+        profile: [hysteria1, udp-custom, slowdns, zivpn, webmin]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    env:
+      GH_API_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare verified runtime configuration
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl jq ca-certificates
+          sudo install -d -m 700 /etc/hextunnel
+          cat > /tmp/hextunnel.env <<'EOF'
+          HEXTUNNEL_ALLOW_ROOT_PASSWORD=0
+          HEXTUNNEL_WEBMIN_PUBLIC=0
+          HEXTUNNEL_WEBMIN_PORT=10000
+          HEXTUNNEL_ADMIN_IP=127.0.0.1/32
+          HEXTUNNEL_SLOWDNS_NS=ns-ci.example.test
+          HEXTUNNEL_SLOWDNS_LISTEN_ADDRESS=127.0.0.1
+          HEXTUNNEL_SLOWDNS_LISTEN_PORT=5353
+          HEXTUNNEL_HYSTERIA1_NAT_START=21000
+          HEXTUNNEL_HYSTERIA1_NAT_END=21010
+          HEXTUNNEL_HYSTERIA1_NAT_EXEMPT=36713
+          HEXTUNNEL_ZIVPN_NAT_START=6100
+          HEXTUNNEL_ZIVPN_NAT_END=6110
+          EOF
+
+          api_get() {
+            curl -fsSL --retry 3 \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer $GH_API_TOKEN" \
+              "$1"
+          }
+          verified_asset() {
+            local api="$1" asset="$2" output="$3" metadata url
+            metadata="$(api_get "$api")"
+            url="$(jq -r --arg asset "$asset" '.assets[] | select(.name == $asset) | .browser_download_url' <<< "$metadata" | head -n1)"
+            [[ -n "$url" && "$url" != null ]]
+            curl -fL --retry 3 -o "$output" "$url"
+            sha256sum "$output" | awk '{print tolower($1)}'
+          }
+
+          case '${{ matrix.profile }}' in
+            hysteria1)
+              version=1.12.22
+              asset="sing-box_${version}_linux_amd64.deb"
+              sha="$(verified_asset "https://api.github.com/repos/SagerNet/sing-box/releases/tags/v${version}" "$asset" /tmp/sing-box.deb)"
+              printf 'HEXTUNNEL_SINGBOX_VERSION=%s\nHEXTUNNEL_SINGBOX_SHA256=%s\n' "$version" "$sha" >> /tmp/hextunnel.env
+              ;;
+            udp-custom)
+              url=https://raw.githubusercontent.com/mahpud896/UDP-Custom/main/bin/udp-custom-linux-amd64
+              curl -fL --retry 3 -o /tmp/udp-custom "$url"
+              sha="$(sha256sum /tmp/udp-custom | awk '{print tolower($1)}')"
+              printf 'HEXTUNNEL_UDP_CUSTOM_BINARY_URL=%s\nHEXTUNNEL_UDP_CUSTOM_SHA256=%s\n' "$url" "$sha" >> /tmp/hextunnel.env
+              ;;
+            slowdns)
+              url=https://raw.githubusercontent.com/fisabiliyusri/SLDNS/main/slowdns/sldns-server
+              curl -fL --retry 3 -o /tmp/sldns-server "$url"
+              sha="$(sha256sum /tmp/sldns-server | awk '{print tolower($1)}')"
+              printf 'HEXTUNNEL_SLOWDNS_BINARY_URL=%s\nHEXTUNNEL_SLOWDNS_SHA256=%s\n' "$url" "$sha" >> /tmp/hextunnel.env
+              ;;
+            zivpn)
+              tag=udp-zivpn_1.4.9
+              asset=udp-zivpn-linux-amd64
+              sha="$(verified_asset "https://api.github.com/repos/zahidbd2/udp-zivpn/releases/tags/${tag}" "$asset" /tmp/zivpn)"
+              printf 'HEXTUNNEL_ZIVPN_VERSION=%s\nHEXTUNNEL_ZIVPN_SHA256=%s\n' "$tag" "$sha" >> /tmp/hextunnel.env
+              ;;
+            webmin) : ;;
+          esac
+
+          sudo install -m 600 /tmp/hextunnel.env /etc/hextunnel/hextunnel.env
+          sudo tee /etc/hextunnel/secrets.env >/dev/null <<'EOF'
+          HEXTUNNEL_TELEGRAM_CHAT_ID=""
+          HEXTUNNEL_TELEGRAM_BOT_TOKEN=""
+          EOF
+          sudo chmod 600 /etc/hextunnel/secrets.env
+
+      - name: Install selected module
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          case '${{ matrix.profile }}' in
+            hysteria1) module=hysteria ;;
+            udp-custom) module=udp-custom ;;
+            slowdns) module=slowdns ;;
+            zivpn) module=zivpn ;;
+            webmin) module=webmin ;;
+          esac
+          sudo -E bash ./install.sh install "$module" \
+            --non-interactive --no-reboot --force \
+            2>&1 | tee /tmp/pending-module-install.log
+
+      - name: Validate service and configuration
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          case '${{ matrix.profile }}' in
+            hysteria1)
+              sudo systemctl is-active --quiet hextunnel-hysteria
+              sudo systemctl is-active --quiet hextunnel-hysteria-nat
+              sudo /usr/local/bin/sing-box-hextunnel check -c /etc/hysteria1/config.json
+              sudo hextunnel-nat status hysteria1
+              sudo ss -lunp | grep -q ':36712 '
+              ;;
+            udp-custom)
+              sudo systemctl is-active --quiet udp-custom
+              sudo systemctl is-active --quiet hextunnel-badvpn
+              sudo jq empty /etc/udp-custom/config.json
+              sudo ss -lunp | grep -q ':36717 '
+              sudo ss -lntp | grep -q ':7300 '
+              ;;
+            slowdns)
+              sudo systemctl is-active --quiet server-sldns
+              sudo runuser -u hextunnel-slowdns -- test -r /etc/slowdns/server.key
+              sudo test -s /etc/slowdns/server.pub
+              sudo ss -lunp | grep -q '127.0.0.1:5353'
+              ;;
+            zivpn)
+              sudo systemctl is-active --quiet zivpn
+              sudo systemctl is-active --quiet hextunnel-zivpn-nat
+              sudo jq empty /etc/zivpn/config.json
+              sudo hextunnel-nat status zivpn
+              sudo ss -lunp | grep -q ':5667 '
+              ;;
+            webmin)
+              sudo systemctl is-active --quiet webmin
+              sudo grep -q '^ssl=1$' /etc/webmin/miniserv.conf
+              sudo grep -q '^bind=127.0.0.1$' /etc/webmin/miniserv.conf
+              sudo ss -lntp | grep -q '127.0.0.1:10000'
+              curl -ksS --connect-timeout 10 -o /dev/null https://127.0.0.1:10000/
+              ;;
+          esac
+          sudo hextunnel doctor --report /tmp/pending-module-doctor.txt
+          sudo test -s /tmp/pending-module-doctor.txt
+          ! sudo grep -Eq -- '-----BEGIN .*PRIVATE KEY-----|[0-9]{8,12}:[A-Za-z0-9_-]{20,}' /tmp/pending-module-doctor.txt
+
+      - name: Exercise protocol accounts
+        if: matrix.profile == 'hysteria1' || matrix.profile == 'zivpn'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          protocol='${{ matrix.profile }}'
+          [[ "$protocol" == hysteria1 ]] && protocol=hysteria
+          expires="$(date -d '+7 days' +%Y-%m-%d)"
+          sudo hextunnel-account create "$protocol" ciuser "$expires" > /tmp/pending-account-create.txt
+          sudo hextunnel-account suspend "$protocol" ciuser
+          sudo hextunnel-account resume "$protocol" ciuser
+          sudo hextunnel-account renew "$protocol" ciuser "$(date -d '+14 days' +%Y-%m-%d)"
+          sudo hextunnel-account delete "$protocol" ciuser
+          ! sudo hextunnel-account list | grep -q $'ciuser'
+
+      - name: Uninstall selected module
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          case '${{ matrix.profile }}' in
+            hysteria1) modules=(hysteria xray ssh) ;;
+            udp-custom) modules=(udp-custom ssh) ;;
+            slowdns) modules=(slowdns ssh) ;;
+            zivpn) modules=(zivpn xray ssh) ;;
+            webmin) modules=(webmin) ;;
+          esac
+          sudo hextunnel uninstall "${modules[@]}" 2>&1 | tee /tmp/pending-module-uninstall.log
+          case '${{ matrix.profile }}' in
+            hysteria1)
+              test ! -e /etc/systemd/system/hextunnel-hysteria.service
+              ! sudo hextunnel-nat status hysteria1
+              ;;
+            udp-custom)
+              test ! -e /etc/systemd/system/udp-custom.service
+              test ! -e /usr/local/bin/udp-custom
+              ;;
+            slowdns)
+              test ! -e /etc/systemd/system/server-sldns.service
+              test ! -e /usr/local/bin/sldns-server
+              ;;
+            zivpn)
+              test ! -e /etc/systemd/system/zivpn.service
+              ! sudo hextunnel-nat status zivpn
+              ;;
+            webmin)
+              test ! -e /etc/webmin
+              test ! -e /etc/apt/sources.list.d/webmin.list
+              ;;
+          esac
+
+      - name: Collect diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          {
+            echo '=== failed units ==='
+            sudo systemctl --failed --no-pager
+            for unit in ssh hextunnel-hysteria hextunnel-hysteria-nat udp-custom hextunnel-badvpn server-sldns zivpn hextunnel-zivpn-nat webmin; do
+              echo
+              echo "=== $unit ==="
+              sudo systemctl status "$unit" --no-pager -l
+              sudo journalctl -u "$unit" -n 160 --no-pager
+            done
+            echo
+            echo '=== firewall ==='
+            sudo nft list ruleset
+            sudo iptables-save
+          } > /tmp/pending-module-system.log 2>&1
+          sudo chmod 644 /tmp/pending-module-*.log /tmp/pending-module-doctor.txt /tmp/pending-account-create.txt 2>/dev/null || true
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pending-${{ matrix.profile }}-${{ matrix.runner }}-${{ github.run_id }}
+          path: |
+            /tmp/pending-module-system.log
+            /tmp/pending-module-install.log
+            /tmp/pending-module-uninstall.log
+            /tmp/pending-module-doctor.txt
+            /tmp/pending-account-create.txt
+          if-no-files-found: warn
+          retention-days: 7
