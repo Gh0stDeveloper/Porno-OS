@@ -1,3 +1,0 @@
-error: Potential secrets detected:
-  tools/preprocess_install.py:65: Private key; previous='if "'
-
