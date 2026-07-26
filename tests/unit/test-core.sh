@@ -59,4 +59,9 @@ stage secret-generation
 secret="$(random_secret 32)"
 [[ ${#secret} -eq 32 && "$secret" =~ ^[a-f0-9]+$ ]]
 
+stage managed-user-removal
+mkdir -p "$HEXTUNNEL_STATE/system-users"
+printf 'created_at=%s\ngroup_created=0\n' "$(date -Is)" > "$HEXTUNNEL_STATE/system-users/test-service"
+remove_managed_system_user test-service
+
 printf 'core tests: ok\n'
