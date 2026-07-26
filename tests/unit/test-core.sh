@@ -10,7 +10,6 @@ stage() { printf 'TEST: %s\n' "$1"; }
 index_of() {
   local needle="$1" index
   shift
-  for index in "${!@}"; do :; done
   local values=("$@")
   for index in "${!values[@]}"; do
     [[ "${values[$index]}" == "$needle" ]] && { printf '%s' "$index"; return 0; }
