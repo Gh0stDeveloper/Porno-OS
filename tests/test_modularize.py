@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import stat
 import subprocess
 import sys
@@ -50,7 +51,7 @@ class ModularizationTests(unittest.TestCase):
             )
             body.extend([f"# filler {index}-{line}\n" for line in range(75)])
             body.append("\n")
-        body.extend(["section_0\n", "echo \"El servidor se reiniciará en 10 segundos\"\n", "sleep 10\n", "reboot\n"])
+        body.extend(["section_0\n", "echo \"El servidor se reiniciará en 10 segundos\"\n", "sleep 10\n", "reboot"])
         return "".join(body)
 
     def prepare_root(self, temp: Path) -> None:
@@ -77,6 +78,7 @@ class ModularizationTests(unittest.TestCase):
             self.assertGreaterEqual(len(modules), 2)
             self.assertEqual(BUILD.load_bundle(temp), (temp / "install.sh").read_text(encoding="utf-8"))
             generated = (temp / "install.sh").read_text(encoding="utf-8")
+            self.assertFalse(generated.endswith("\n"))
             self.assertNotIn("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi", generated)
             self.assertIn("Hex Tunnel debe ejecutarse como root", generated)
             self.assertIn("HEXTUNNEL_NO_REBOOT", generated)
