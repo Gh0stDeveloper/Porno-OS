@@ -38,8 +38,12 @@ nat_rule_tag() {
   printf 'hextunnel-nat:%s' "$1"
 }
 
+nat_nft_chain() {
+  nft -a list chain inet hextunnel_nat prerouting 2>/dev/null || true
+}
+
 nat_apply() {
-  local profile="$1" start end target exempt interface backend tag quoted_tag quoted_exempt
+  local profile="$1" start end target exempt interface backend tag quoted_tag quoted_exempt output
   read -r start end target exempt < <(nat_profile_values "$profile")
   nat_validate_values "$start" "$end" "$target" "$exempt"
   interface="$(nat_primary_interface)"
@@ -55,10 +59,12 @@ nat_apply() {
       nft list table inet hextunnel_nat >/dev/null 2>&1 || nft add table inet hextunnel_nat
       nft list chain inet hextunnel_nat prerouting >/dev/null 2>&1 \
         || nft 'add chain inet hextunnel_nat prerouting { type nat hook prerouting priority dstnat; policy accept; }'
-      if [[ -n "$exempt" ]] && ! nft -a list chain inet hextunnel_nat prerouting | grep -Fq "${tag}:exempt"; then
+      output="$(nat_nft_chain)"
+      if [[ -n "$exempt" ]] && ! grep -Fq "comment \"${tag}:exempt\"" <<< "$output"; then
         nft add rule inet hextunnel_nat prerouting iifname "$interface" udp dport "$exempt" return comment "$quoted_exempt"
+        output="$(nat_nft_chain)"
       fi
-      if ! nft -a list chain inet hextunnel_nat prerouting | grep -Fq "$tag"; then
+      if ! grep -Fq "comment \"$tag\"" <<< "$output"; then
         nft add rule inet hextunnel_nat prerouting iifname "$interface" udp dport "$start-$end" dnat to ":$target" comment "$quoted_tag"
       fi
       ;;
@@ -86,7 +92,7 @@ nat_remove() {
       while read -r handle; do
         [[ "$handle" =~ ^[0-9]+$ ]] || continue
         nft delete rule inet hextunnel_nat prerouting handle "$handle" >/dev/null 2>&1 || true
-      done < <({ nft -a list chain inet hextunnel_nat prerouting 2>/dev/null | grep -F "$tag" | sed -n 's/.* handle \([0-9][0-9]*\)$/\1/p'; } || true)
+      done < <({ nat_nft_chain | grep -F "$tag" | sed -n 's/.* handle \([0-9][0-9]*\)$/\1/p'; } || true)
       ;;
     ufw|iptables)
       while iptables -t nat -C PREROUTING -i "$interface" -p udp --dport "$start:$end" -m comment --comment "$tag" -j DNAT --to-destination ":$target" 2>/dev/null; do
@@ -107,12 +113,12 @@ nat_is_present() {
   backend="$(firewall_backend 2>/dev/null)" || return 1
   case "$backend" in
     nft)
-      output="$(nft -a list chain inet hextunnel_nat prerouting 2>/dev/null || true)"
-      if grep -Fq "$tag" <<< "$output"; then return 0; fi
+      output="$(nat_nft_chain)"
+      if grep -Fq "comment \"$tag\"" <<< "$output"; then return 0; fi
       ;;
     ufw|iptables)
       output="$(iptables-save -t nat 2>/dev/null || true)"
-      if grep -Fq "$tag" <<< "$output"; then return 0; fi
+      if grep -Eq -- "--comment (\"${tag}\"|${tag})([[:space:]]|$)" <<< "$output"; then return 0; fi
       ;;
   esac
   return 1
