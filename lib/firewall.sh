@@ -80,9 +80,10 @@ firewall_restore() {
 }
 
 firewall_open_port() {
-  local protocol="$1" port="$2" source="${3:-0.0.0.0/0}" backend tag family
+  local protocol="$1" port="$2" source="${3:-0.0.0.0/0}" backend tag family quoted_tag
   backend="$(firewall_backend)" || die "No existe un backend de firewall preparado."
   tag="$(firewall_rule_tag "$protocol" "$port")"
+  quoted_tag="\"$tag\""
   log_info "Firewall: permitir $protocol/$port desde $source mediante $backend"
   [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] && return 0
 
@@ -101,15 +102,15 @@ firewall_open_port() {
       nft list table inet hextunnel >/dev/null 2>&1 || nft add table inet hextunnel
       nft list chain inet hextunnel input >/dev/null 2>&1 \
         || nft 'add chain inet hextunnel input { type filter hook input priority -5; policy accept; }'
-      if nft -a list chain inet hextunnel input 2>/dev/null | grep -Fq "comment \"$tag\""; then
+      if nft -a list chain inet hextunnel input 2>/dev/null | grep -Fq "$tag"; then
         return 0
       fi
       if [[ "$source" == 0.0.0.0/0 || "$source" == ::/0 ]]; then
-        nft add rule inet hextunnel input "$protocol" dport "$port" accept comment "$tag"
+        nft add rule inet hextunnel input "$protocol" dport "$port" accept comment "$quoted_tag"
       else
         family=ip
         [[ "$source" == *:* ]] && family=ip6
-        nft add rule inet hextunnel input "$family" saddr "$source" "$protocol" dport "$port" accept comment "$tag"
+        nft add rule inet hextunnel input "$family" saddr "$source" "$protocol" dport "$port" accept comment "$quoted_tag"
       fi
       ;;
     iptables)
@@ -141,7 +142,7 @@ firewall_nft_rule_handles() {
   local tag="$1" output
   output="$(nft -a list chain inet hextunnel input 2>/dev/null || true)"
   printf '%s\n' "$output" \
-    | sed -n "/comment \"$(printf '%s' "$tag" | sed 's/[][\\.^$*+?{}|()]/\\&/g')\"/s/.* handle \([0-9][0-9]*\)$/\1/p"
+    | sed -n "/$(printf '%s' "$tag" | sed 's/[][\\.^$*+?{}|()]/\\&/g')/s/.* handle \([0-9][0-9]*\)$/\1/p"
 }
 
 firewall_close_port() {
