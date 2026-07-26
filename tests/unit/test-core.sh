@@ -29,9 +29,16 @@ stage utility-functions
 
 stage module-registry
 load_module_registry
-for module in ssh xray hysteria2 slowdns slipstream zivpn webmin legacy-all; do
+for module in ssh xray hysteria hysteria2 udp-custom slowdns slipstream zivpn webmin legacy-all; do
   module_exists "$module"
 done
+
+stage certificate-common-name
+HEXTUNNEL_DOMAIN='invalid/domain:with spaces-and-a-name-that-is-deliberately-longer-than-sixty-four-characters.example'
+common_name="$(ssh_certificate_common_name)"
+[[ ${#common_name} -le 64 ]]
+[[ "$common_name" =~ ^[A-Za-z0-9.-]+$ ]]
+unset HEXTUNNEL_DOMAIN
 
 stage recursive-dependencies
 requested=(hysteria2 slipstream)
