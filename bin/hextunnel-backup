@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+ROOT="${HEXTUNNEL_INSTALL_DIR:-/opt/hextunnel}"
+[[ -f "$ROOT/lib/common.sh" ]] || ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+for file in common logging backup rollback systemd firewall secrets validation modules; do
+  # shellcheck disable=SC1090
+  source "$ROOT/lib/$file.sh"
+done
+init_logging
+load_runtime_config
+load_hextunnel_secrets
+load_module_registry
+
+usage() {
+  cat <<'EOF'
+hextunnel-backup create [--output archivo.tar.gz] [--age-recipient RECIPIENT]
+hextunnel-backup verify <archivo.tar.gz|archivo.tar.gz.age> [--identity clave-age]
+EOF
+}
+
+backup_paths_list() {
+  cat <<'EOF'
+etc/hextunnel
+etc/xray
+etc/hysteria1
+etc/hysteria2
+etc/udp-custom
+etc/zivpn
+etc/slowdns
+etc/slipstream
+etc/socksproxy
+etc/webmin
+etc/ssh/sshd_config.d/90-hextunnel.conf
+etc/stunnel/hextunnel.conf
+etc/default/hextunnel-slowdns
+etc/default/stunnel4
+etc/default/sslh
+etc/dnsdist/dnsdist.conf
+etc/danted.conf
+etc/fail2ban/jail.d/hextunnel-sshd.local
+var/lib/hextunnel
+opt/hextunnel
+EOF
+}
+
+backup_create() {
+  require_root
+  local output="" recipient="" work manifest archive path
+  while (($# > 0)); do
+    case "$1" in
+      --output) shift; output="${1:-}" ;;
+      --age-recipient) shift; recipient="${1:-}" ;;
+      *) die "Opción desconocida: $1" ;;
+    esac
+    shift
+  done
+  ensure_dir 700 /var/backups/hextunnel
+  output="${output:-/var/backups/hextunnel/hextunnel-$(date +%Y%m%d-%H%M%S).tar.gz}"
+  work="$(mktemp -d /tmp/hextunnel-export.XXXXXX)"
+  trap 'rm -rf "${work:-}"' RETURN
+  manifest="$work/paths.txt"
+  while IFS= read -r path; do
+    [[ -e "/$path" || -L "/$path" ]] && printf '%s\n' "$path" >> "$manifest"
+  done < <(backup_paths_list)
+  [[ -s "$manifest" ]] || die "No se encontraron rutas administradas para respaldar."
+  archive="$work/backup.tar.gz"
+  tar --acls --xattrs --numeric-owner --one-file-system -C / -czf "$archive" -T "$manifest"
+  tar -tzf "$archive" | grep -Eq '(^/|(^|/)\.\.(/|$))' && die "El respaldo generado contiene rutas inseguras."
+  install -d -m 700 "$(dirname "$output")"
+  if [[ -n "$recipient" ]]; then
+    command_exists age || die "Instala age para exportar un respaldo cifrado."
+    age -r "$recipient" -o "${output}.age" "$archive"
+    chmod 600 "${output}.age"
+    sha256sum "${output}.age" > "${output}.age.sha256"
+    chmod 600 "${output}.age.sha256"
+    printf 'Respaldo cifrado: %s\n' "${output}.age"
+  else
+    install -m 600 "$archive" "$output"
+    sha256sum "$output" > "${output}.sha256"
+    chmod 600 "${output}.sha256"
+    printf 'Respaldo: %s\n' "$output"
+  fi
+}
+
+backup_verify_plain() {
+  local archive="$1"
+  [[ -s "$archive" ]] || die "El archivo de respaldo está vacío."
+  if tar -tzf "$archive" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+    die "El respaldo contiene rutas absolutas o traversal."
+  fi
+  tar -tzf "$archive" >/dev/null
+}
+
+backup_verify() {
+  local archive="${1:-}" identity="" work plain
+  [[ -n "$archive" ]] || { usage; exit 64; }
+  shift || true
+  while (($# > 0)); do
+    case "$1" in
+      --identity) shift; identity="${1:-}" ;;
+      *) die "Opción desconocida: $1" ;;
+    esac
+    shift
+  done
+  if [[ "$archive" == *.age ]]; then
+    command_exists age || die "Instala age para verificar el respaldo cifrado."
+    [[ -n "$identity" && -r "$identity" ]] || die "Indica --identity para descifrar el respaldo."
+    work="$(mktemp -d /tmp/hextunnel-backup-verify.XXXXXX)"
+    trap 'rm -rf "${work:-}"' RETURN
+    plain="$work/backup.tar.gz"
+    age -d -i "$identity" -o "$plain" "$archive"
+    backup_verify_plain "$plain"
+  else
+    backup_verify_plain "$archive"
+  fi
+  printf 'Respaldo válido: %s\n' "$archive"
+}
+
+case "${1:-help}" in
+  create) shift; backup_create "$@" ;;
+  verify) shift; backup_verify "$@" ;;
+  help|--help|-h) usage ;;
+  *) usage; exit 64 ;;
+esac
