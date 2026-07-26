@@ -1,4 +1,32 @@
 #!/bin/bash
+# GENERATED FILE: edit src/modules/*.sh and run python3 tools/build.py
+# Runtime safety controls. These checks fail before the installer modifies the VPS.
+HEXTUNNEL_NO_REBOOT="${HEXTUNNEL_NO_REBOOT:-0}"
+for _hextunnel_arg in "$@"; do
+  case "$_hextunnel_arg" in
+    --no-reboot) HEXTUNNEL_NO_REBOOT=1 ;;
+  esac
+done
+unset _hextunnel_arg
+
+if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+  echo "ERROR: Hex Tunnel debe ejecutarse como root." >&2
+  exit 1
+fi
+if [[ ! -r /etc/os-release ]]; then
+  echo "ERROR: No se pudo leer /etc/os-release." >&2
+  exit 1
+fi
+if ! command -v systemctl >/dev/null 2>&1; then
+  echo "ERROR: Este instalador requiere systemd/systemctl." >&2
+  exit 1
+fi
+
+_hextunnel_free_kb="$(df -Pk / 2>/dev/null | awk 'NR==2 {print $4}')"
+if [[ "$_hextunnel_free_kb" =~ ^[0-9]+$ ]] && (( _hextunnel_free_kb < 1048576 )); then
+  echo "ADVERTENCIA: hay menos de 1 GiB libre en la partición raíz." >&2
+fi
+unset _hextunnel_free_kb
 #
 # Copyright (c) 2026 Hex Applications. Todos los derechos reservados.
 # Uso permitido según LICENSE. Prohibida la copia, modificación o
@@ -259,8 +287,22 @@ Dns_2='1.0.0.1'
 
 MyVPS_Time='Africa/Accra'
 
-My_Chat_ID='344472672'
-My_Bot_Key='8715170470:AAE8urT5fSWdZ_xgkwwZivN4kgHW9nBVxgY'
+# Telegram notification credentials are loaded from environment variables or
+# a local secrets file. config/secrets.env is intentionally ignored by Git.
+HEXTUNNEL_SECRETS_FILE="${HEXTUNNEL_SECRETS_FILE:-/etc/hextunnel/secrets.env}"
+if [[ ! -f "$HEXTUNNEL_SECRETS_FILE" && -n "${BASH_SOURCE[0]:-}" ]]; then
+  _hextunnel_source_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
+  if [[ -n "$_hextunnel_source_dir" && -f "$_hextunnel_source_dir/config/secrets.env" ]]; then
+    HEXTUNNEL_SECRETS_FILE="$_hextunnel_source_dir/config/secrets.env"
+  fi
+fi
+if [[ -f "$HEXTUNNEL_SECRETS_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$HEXTUNNEL_SECRETS_FILE"
+fi
+My_Chat_ID="${HEXTUNNEL_TELEGRAM_CHAT_ID:-}"
+My_Bot_Key="${HEXTUNNEL_TELEGRAM_BOT_TOKEN:-}"
+unset _hextunnel_source_dir
 
 function ip_address(){
   local IP="$( ip addr | egrep -o '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | egrep -v "^192\.168|^172\.1[6-9]\.|^172\.2[0-9]\.|^172\.3[0-2]\.|^10\.|^127\.|^255\.|^0\." | head -n 1 )"
@@ -1372,84 +1414,10 @@ rm -f /tmp/sing-box.deb
 mkdir -p /etc/hysteria
 HYST_PORT="${UDP_PORT##*:}"
 
-cat << EOF > /etc/hysteria/hysteria.crt
-Certificate:
-    Data:
-        Version: 3 (0x2)
-        Serial Number: 40:26:da:91:18:2b:77:9c:85:6a:0c:bb:ca:90:53:fe
-        Signature Algorithm: sha256WithRSAEncryption
-        Issuer: CN=KobZ
-        Validity
-            Not Before: Jul 22 22:23:55 2020 GMT
-            Not After : Jul 20 22:23:55 2030 GMT
-        Subject: CN=server
-        Subject Public Key Info:
-            Public Key Algorithm: rsaEncryption
-                RSA Public-Key: (1024 bit)
-                Modulus:
-                    00:ce:35:23:d8:5d:9f:b6:9b:cb:6a:89:e1:90:af:
-                    42:df:5f:f8:bd:ad:a7:78:9a:ca:20:f0:3d:5b:d6:
-                    c9:ef:4c:4a:99:96:c3:38:fd:59:b4:d7:65:ed:d4:
-                    a7:fa:ab:03:e2:be:88:2f:ca:fc:90:dd:b0:b7:bc:
-                    23:cb:83:ac:36:e2:01:57:69:64:b8:e1:9e:51:f0:
-                    a6:9d:13:d9:92:6b:4d:04:a6:10:64:a3:3f:6b:ff:
-                    fe:32:ac:91:63:c2:71:24:be:9e:76:4f:87:cc:3a:
-                    03:a1:9e:48:3f:11:92:33:3b:19:16:9c:d0:5d:16:
-                    ee:c1:42:67:99:47:66:67:67
-                Exponent: 65537 (0x10001)
-        X509v3 extensions:
-            X509v3 Basic Constraints: CA:FALSE
-            X509v3 Subject Key Identifier: 6B:08:C0:64:10:71:A8:32:7F:0B:FE:1E:98:1F:BD:72:74:0F:C8:66
-            X509v3 Authority Key Identifier: keyid:64:49:32:6F:FE:66:62:F1:57:4D:BB:91:A8:5D:BD:26:3E:51:A4:D2
-                DirName:/CN=KobZ
-                serial:01:A4:01:02:93:12:D9:D6:01:A9:83:DC:03:73:DA:ED:C8:E3:C3:B7
-            X509v3 Extended Key Usage: TLS Web Server Authentication
-            X509v3 Key Usage: Digital Signature, Key Encipherment
-            X509v3 Subject Alternative Name: DNS:server
-    Signature Algorithm: sha256WithRSAEncryption
-         a1:3e:ac:83:0b:e5:5d:ca:36:b7:d0:ab:d0:d9:73:66:d1:62:
-         88:ce:3d:47:9e:08:0b:a0:5b:51:13:fc:7e:d7:6e:17:0e:bd:
-         f5:d9:a9:d9:06:78:52:88:5a:e5:df:d3:32:22:4a:4b:08:6f:
-         b1:22:80:4f:19:d1:5f:9d:b6:5a:17:f7:ad:70:a9:04:00:ff:
-         fe:84:aa:e1:cb:0e:74:c0:1a:75:0b:3e:98:90:1d:22:ba:a4:
-         7a:26:65:7d:d1:3b:5c:45:a1:77:22:ed:b6:6b:18:a3:c4:ee:
-         3e:06:bb:0b:ec:12:ac:16:a5:50:b3:ed:46:43:87:72:fd:75:8c:38
------BEGIN CERTIFICATE-----
-MIICVDCCAb2gAwIBAgIQQCbakRgrd5yFagy7ypBT/jANBgkqhkiG9w0BAQsFADAP
-MQ0wCwYDVQQDDARLb2JaMB4XDTIwMDcyMjIyMjM1NVoXDTMwMDcyMDIyMjM1NVow
-ETEPMA0GA1UEAwwGc2VydmVyMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDO
-NSPYXZ+2m8tqieGQr0LfX/i9rad4msog8D1b1snvTEqZlsM4/Vm012Xt1Kf6qwPi
-vogvyvyQ3bC3vCPLg6w24gFXaWS44Z5R8KadE9mSa00EphBkoz9r//4yrJFjwnEk
-vp52T4fMOgOhnkg/EZIzOxkWnNBdFu7BQmeZR2ZnZwIDAQABo4GuMIGrMAkGA1Ud
-EwQCMAAwHQYDVR0OBBYEFGsIwGQQcagyfwv+HpgfvXJ0D8hmMEoGA1UdIwRDMEGA
-FGRJMm/+ZmLxV027kahdvSY+UaTSoROkETAPMQ0wCwYDVQQDDARLb2JaghQBpAEC
-kxLZ1gGpg9wDc9rtyOPDtzATBgNVHSUEDDAKBggrBgEFBQcDATALBgNVHQ8EBAMC
-BaAwEQYDVR0RBAowCIIGc2VydmVyMA0GCSqGSIb3DQEBCwUAA4GBAKE+rIML5V3K
-NrfQq9DZc2bRYojOPUeeCAugW1ET/H7XbhcOvfXZqdkGeFKIWuXf0zIiSksIb7Ei
-gE8Z0V+dtloX961wqQQA//6EquHLDnTAGnULPpiQHSK6pHomZX3RO1xFoXci7bZr
-GKPE7j4GuwvsEqwWpVCz7UZDh3L9dYw4
------END CERTIFICATE-----
-EOF
-
-cat << EOF > /etc/hysteria/hysteria.key
------BEGIN PRIVATE KEY-----
-MIICdQIBADANBgkqhkiG9w0BAQEFAASCAl8wggJbAgEAAoGBAM41I9hdn7aby2qJ
-4ZCvQt9f+L2tp3iayiDwPVvWye9MSpmWwzj9WbTXZe3Up/qrA+K+iC/K/JDdsLe8
-I8uDrDbiAVdpZLjhnlHwpp0T2ZJrTQSmEGSjP2v//jKskWPCcSS+nnZPh8w6A6Ge
-SD8RkjM7GRac0F0W7sFCZ5lHZmdnAgMBAAECgYAFNrC+UresDUpaWjwaxWOidDG8
-0fwu/3Lm3Ewg21BlvX8RXQ94jGdNPDj2h27r1pEVlY2p767tFr3WF2qsRZsACJpI
-qO1BaSbmhek6H++Fw3M4Y/YY+JD+t1eEBjJMa+DR5i8Vx3AE8XOdTXmkl/xK4jaB
-EmLYA7POyK+xaDCeEQJBAPJadiYd3k9OeOaOMIX+StCs9OIMniRz+090AJZK4CMd
-jiOJv0mbRy945D/TkcqoFhhScrke9qhgZbgFj11VbDkCQQDZ0aKBPiZdvDMjx8WE
-y7jaltEDINTCxzmjEBZSeqNr14/2PG0X4GkBL6AAOLjEYgXiIvwfpoYE6IIWl3re
-ebCfAkAHxPimrixzVGux0HsjwIw7dl//YzIqrwEugeSG7O2Ukpz87KySOoUks3Z1
-yV2SJqNWskX1Q1Xa/gQkyyDWeCeZAkAbyDBI+ctc8082hhl8WZunTcs08fARM+X3
-FWszc+76J1F2X7iubfIWs6Ndw95VNgd4E2xDATNg1uMYzJNgYvcTAkBoE8o3rKkp
-em2n0WtGh6uXI9IC29tTQGr3jtxLckN/l9KsJ4gabbeKNoes74zdena1tRdfGqUG
-JQbf7qSE3mg2
------END PRIVATE KEY-----
-EOF
-
+# Reuse the per-server Xray certificate instead of a shared embedded key.
+# Copies avoid permission changes propagating through symbolic links.
+install -m 0644 /etc/xray/xray.crt /etc/hysteria/hysteria.crt
+install -m 0600 /etc/xray/xray.key /etc/hysteria/hysteria.key
 cat > /etc/hysteria/config.json <<EOF
 {
   "log": { "level": "fatal" },
@@ -1490,7 +1458,8 @@ cat > /etc/hysteria/config.json <<EOF
 }
 EOF
 
-chmod 755 /etc/hysteria/config.json /etc/hysteria/hysteria.crt /etc/hysteria/hysteria.key
+chmod 600 /etc/hysteria/config.json /etc/hysteria/hysteria.key
+chmod 644 /etc/hysteria/hysteria.crt
 echo "$PASSWORD $(date -d "+365 days" +"%Y-%m-%d")" > /etc/hysteria/users.txt
 
 cat > /etc/systemd/system/hysteria-server.service <<EOF
@@ -3239,6 +3208,10 @@ clear
 figlet Hex Auto Script By JotchuaDevz -c | lolcat
 echo "       ¡Instalación Completa! El sistema necesita reiniciarse para aplicar todos los cambios! "
 history -c; rm /root/full.sh 2>/dev/null || true
-echo "           ¡El servidor se reiniciará en 10 segundos! "
-sleep 10
-reboot
+if [[ "$HEXTUNNEL_NO_REBOOT" == "1" ]]; then
+  echo "Reinicio automático omitido (--no-reboot / HEXTUNNEL_NO_REBOOT=1)."
+else
+  echo "           ¡El servidor se reiniciará en 10 segundos! "
+  sleep 10
+  reboot
+fi
