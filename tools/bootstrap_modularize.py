@@ -29,6 +29,19 @@ CHAT_RE = re.compile(r"(?m)^My_Chat_ID=(?P<quote>['\"])(?P<value>.*?)(?P=quote)\
 TOKEN_RE = re.compile(r"(?m)^My_Bot_Key=(?P<quote>['\"])(?P<value>.*?)(?P=quote)\s*$")
 GENERATED_MARKER = "# GENERATED FILE: edit src/modules/*.sh and run python3 tools/build.py"
 
+HYSTERIA_EMBEDDED_TLS_RE = re.compile(
+    r"(?ms)^cat\s+<<\s*EOF\s*>\s*/etc/hysteria/hysteria\.crt\s*\n"
+    r".*?^EOF\s*\n\s*"
+    r"^cat\s+<<\s*EOF\s*>\s*/etc/hysteria/hysteria\.key\s*\n"
+    r".*?^EOF\s*\n"
+)
+
+HYSTERIA_TLS_LINKS = r'''# Reuse the per-server Xray certificate instead of a shared embedded key.
+rm -f /etc/hysteria/hysteria.crt /etc/hysteria/hysteria.key
+ln -s /etc/xray/xray.crt /etc/hysteria/hysteria.crt
+ln -s /etc/xray/xray.key /etc/hysteria/hysteria.key
+'''
+
 RUNTIME_SAFETY = r'''# Runtime safety controls. These checks fail before the installer modifies the VPS.
 HEXTUNNEL_NO_REBOOT="${HEXTUNNEL_NO_REBOOT:-0}"
 for _hextunnel_arg in "$@"; do
@@ -161,6 +174,20 @@ def migrate_final_reboot(content: str) -> str:
     if content.endswith("\n") and not replacement.endswith("\n") and not suffix:
         replacement += "\n"
     return content[: match.start()] + replacement + suffix
+
+
+def migrate_hysteria_tls(content: str) -> str:
+    if "Reuse the per-server Xray certificate" in content:
+        return content
+    match = HYSTERIA_EMBEDDED_TLS_RE.search(content)
+    if not match:
+        raise RuntimeError("Could not locate the embedded Hysteria certificate and private key")
+    replacement = HYSTERIA_TLS_LINKS.rstrip("\n") + "\n"
+    migrated = content[: match.start()] + replacement + content[match.end() :]
+    private_key_marker = "-----BEGIN " + "PRIVATE KEY-----"
+    if private_key_marker in migrated:
+        raise RuntimeError("A private key marker remained after Hysteria TLS migration")
+    return migrated
 
 
 def migrate_secrets(content: str, root: Path) -> str:
@@ -357,6 +384,7 @@ def main() -> int:
 
     create_backup(root, original)
     sanitized = migrate_secrets(original, root)
+    sanitized = migrate_hysteria_tls(sanitized)
     sanitized = insert_generated_marker(sanitized)
     sanitized = insert_runtime_safety(sanitized)
     sanitized = migrate_final_reboot(sanitized)
