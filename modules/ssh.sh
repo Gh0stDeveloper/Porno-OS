@@ -131,9 +131,10 @@ ssh_install_sslh() {
   # Distribution-provided sslh.service files load incompatible defaults across
   # releases. Hex Tunnel uses one explicit libconfig file and a private unit.
   safe_stop_disable_service sslh
-  ensure_dir 700 /etc/hextunnel
+  run_cmd systemctl reset-failed sslh || true
+  ensure_dir 755 /etc/sslh
 
-  write_file /etc/hextunnel/sslh.cfg 644 <<'EOF'
+  write_file /etc/sslh/hextunnel.cfg 640 <<'EOF'
 foreground: true;
 inetd: false;
 numeric: true;
@@ -149,13 +150,14 @@ protocols:
   { name: "http"; host: "127.0.0.1"; port: "10080"; }
 );
 EOF
+  [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] || chown root:sslh /etc/sslh/hextunnel.cfg
 
   write_file /usr/local/sbin/hextunnel-sslh 755 <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 for binary in /usr/sbin/sslh-select /usr/sbin/sslh-fork /usr/sbin/sslh; do
   [[ -x "$binary" ]] || continue
-  exec "$binary" -F /etc/hextunnel/sslh.cfg
+  exec "$binary" -F /etc/sslh/hextunnel.cfg
 done
 echo "No se encontró un binario SSLH compatible." >&2
 exit 127
@@ -182,7 +184,7 @@ ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
 RestrictAddressFamilies=AF_INET AF_INET6
-ReadOnlyPaths=/etc/hextunnel/sslh.cfg
+ReadOnlyPaths=/etc/sslh/hextunnel.cfg
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 
@@ -191,7 +193,7 @@ WantedBy=multi-user.target
 EOF
 
   safe_restart_service hextunnel-sslh \
-    "test -s /etc/hextunnel/sslh.cfg && test -x /usr/local/sbin/hextunnel-sslh"
+    "test -s /etc/sslh/hextunnel.cfg && test -x /usr/local/sbin/hextunnel-sslh"
 }
 
 ssh_install() {
@@ -202,7 +204,7 @@ ssh_install() {
     /etc/ssh/sshd_config.d/90-hextunnel.conf \
     /etc/stunnel/hextunnel.conf \
     /etc/default/stunnel4 \
-    /etc/hextunnel/sslh.cfg \
+    /etc/sslh/hextunnel.cfg \
     /usr/local/sbin/hextunnel-sslh \
     /etc/systemd/system/hextunnel-sslh.service \
     /etc/systemd/system/ws-proxy@.service \
@@ -325,7 +327,7 @@ ssh_uninstall() {
     /etc/ssh/sshd_config.d/90-hextunnel.conf \
     /etc/stunnel/hextunnel.conf \
     /etc/default/stunnel4 \
-    /etc/hextunnel/sslh.cfg \
+    /etc/sslh/hextunnel.cfg \
     /usr/local/sbin/hextunnel-sslh \
     /etc/systemd/system/hextunnel-sslh.service \
     /etc/systemd/system/ws-proxy@.service \
@@ -349,7 +351,8 @@ ssh_validate() {
   ssh_prepare_runtime
   command_exists sshd && sshd -t
   [[ ! -f /etc/stunnel/hextunnel.conf ]] || test -s /etc/xray/xray.key
-  [[ -s /etc/hextunnel/sslh.cfg && -x /usr/local/sbin/hextunnel-sslh ]]
+  [[ -s /etc/sslh/hextunnel.cfg && -x /usr/local/sbin/hextunnel-sslh ]]
+  runuser -u sslh -- test -r /etc/sslh/hextunnel.cfg
   systemctl is-active --quiet hextunnel-sslh
   [[ ! -f /etc/fail2ban/jail.d/hextunnel-sshd.local ]] || fail2ban-client -t >/dev/null
 }
