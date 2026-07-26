@@ -38,6 +38,7 @@ jobs:
             exit 0
           fi
 
+          python3 tools/preprocess_install.py --root .
           python3 tools/bootstrap_modularize.py --root .
           python3 tools/build.py --check --root .
           bash -n install.sh
@@ -54,6 +55,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          rm -f .ci/migration-error.txt .modularize-trigger
           if git diff --quiet && git diff --cached --quiet && [[ -z "$(git ls-files --others --exclude-standard)" ]]; then
             echo 'No generated changes to commit.'
             exit 0
