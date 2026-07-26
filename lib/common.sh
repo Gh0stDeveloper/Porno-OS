@@ -112,7 +112,9 @@ ensure_system_user() {
 }
 
 remove_managed_system_user() {
-  local username="$1" marker="$HEXTUNNEL_STATE/system-users/$username" group_created=0
+  local username marker group_created=0
+  username="$1"
+  marker="$HEXTUNNEL_STATE/system-users/$username"
   [[ -f "$marker" ]] || return 0
   # shellcheck disable=SC1090
   source "$marker"
