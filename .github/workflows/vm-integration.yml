@@ -1,0 +1,124 @@
+name: Ephemeral VM integration
+on:
+  push:
+    branches: [feat/transactional-architecture]
+    paths:
+      - install.sh
+      - bin/**
+      - lib/**
+      - modules/**
+      - templates/**
+      - .github/workflows/vm-integration.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  systemd-integration:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare isolated runtime configuration
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo install -d -m 700 /etc/hextunnel
+          sudo tee /etc/hextunnel/hextunnel.env >/dev/null <<'EOF'
+          HEXTUNNEL_ALLOW_ROOT_PASSWORD=0
+          HEXTUNNEL_WEBMIN_PUBLIC=0
+          HEXTUNNEL_ADMIN_IP=127.0.0.1/32
+          EOF
+          sudo tee /etc/hextunnel/secrets.env >/dev/null <<'EOF'
+          HEXTUNNEL_TELEGRAM_CHAT_ID=""
+          HEXTUNNEL_TELEGRAM_BOT_TOKEN=""
+          EOF
+          sudo chmod 600 /etc/hextunnel/hextunnel.env /etc/hextunnel/secrets.env
+
+      - name: Install maintained core modules
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo -E bash ./install.sh install ssh xray hysteria2 \
+            --non-interactive --no-reboot --force
+
+      - name: Validate services and configurations
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo systemctl is-active --quiet ssh
+          sudo systemctl is-active --quiet stunnel4
+          sudo systemctl is-active --quiet sslh
+          sudo systemctl is-active --quiet xray
+          sudo systemctl is-active --quiet hextunnel-haproxy
+          sudo systemctl is-active --quiet hysteria2
+          sudo sshd -t
+          sudo /usr/local/bin/xray run -test -config /etc/xray/config.json
+          sudo haproxy -c -f /etc/hextunnel/haproxy-xray.cfg
+          sudo runuser -u hextunnel-hysteria2 -- test -r /etc/hysteria2/server.key
+
+      - name: Exercise account lifecycle
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          expires="$(date -d '+7 days' +%Y-%m-%d)"
+          sudo hextunnel-account create hysteria2 ciuser "$expires" > /tmp/account-create.txt
+          sudo hextunnel-account suspend hysteria2 ciuser
+          sudo hextunnel-account resume hysteria2 ciuser
+          sudo hextunnel-account renew hysteria2 ciuser "$(date -d '+14 days' +%Y-%m-%d)"
+          sudo hextunnel-account delete hysteria2 ciuser
+          ! sudo hextunnel-account list | grep -q $'hysteria2\tciuser'
+
+      - name: Run sanitized diagnostics
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo hextunnel doctor --report /tmp/hextunnel-doctor.txt
+          sudo test -s /tmp/hextunnel-doctor.txt
+          ! sudo grep -Eq '-----BEGIN .*PRIVATE KEY-----|[0-9]{8,12}:[A-Za-z0-9_-]{20,}' /tmp/hextunnel-doctor.txt
+
+      - name: Uninstall selected modules
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo hextunnel uninstall hysteria2 xray ssh
+          test ! -e /etc/systemd/system/hysteria2.service
+          test ! -e /etc/systemd/system/xray.service
+          test ! -e /etc/ssh/sshd_config.d/90-hextunnel.conf
+          test ! -e /var/lib/hextunnel/modules/hysteria2
+          test ! -e /var/lib/hextunnel/modules/xray
+          test ! -e /var/lib/hextunnel/modules/ssh
+
+      - name: Collect service diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          {
+            echo '=== systemctl failed ==='
+            sudo systemctl --failed --no-pager
+            for unit in ssh stunnel4 sslh fail2ban xray hextunnel-haproxy hysteria2; do
+              echo
+              echo "=== $unit ==="
+              sudo systemctl status "$unit" --no-pager -l
+              sudo journalctl -u "$unit" -n 120 --no-pager
+            done
+          } > /tmp/vm-integration.log 2>&1
+          sudo chmod 644 /tmp/hextunnel-doctor.txt 2>/dev/null || true
+          sudo chmod 644 /tmp/account-create.txt 2>/dev/null || true
+
+      - name: Upload integration diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vm-integration-${{ matrix.runner }}-${{ github.run_id }}
+          path: |
+            /tmp/vm-integration.log
+            /tmp/hextunnel-doctor.txt
+            /tmp/account-create.txt
+          if-no-files-found: warn
+          retention-days: 7
