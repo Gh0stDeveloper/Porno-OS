@@ -218,7 +218,8 @@ account_hysteria2_add() {
   [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] || {
     sed -i -E "/^${username//./\\.} /d" /etc/hysteria2/users.txt
     printf '%s %s %s\n' "$username" "$token" "$expires" >> /etc/hysteria2/users.txt
-    chmod 600 /etc/hysteria2/users.txt
+    chown root:hextunnel-hysteria2 /etc/hysteria2/users.txt
+    chmod 640 /etc/hysteria2/users.txt
   }
 }
 
@@ -229,7 +230,7 @@ account_hysteria2_remove_runtime() {
   [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] && return 0
   tmp="$(mktemp /tmp/hextunnel-hysteria2-account.XXXXXX)"
   awk -v user="$username" '$1 != user' /etc/hysteria2/users.txt > "$tmp"
-  install -m 600 "$tmp" /etc/hysteria2/users.txt
+  install -m 640 -o root -g hextunnel-hysteria2 "$tmp" /etc/hysteria2/users.txt
   rm -f "$tmp"
 }
 
