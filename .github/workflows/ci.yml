@@ -80,6 +80,21 @@ jobs:
       - name: Scan tracked files for secrets
         run: python3 tools/secret_scan.py
 
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: Run ShellCheck at error severity
+        shell: bash
+        run: |
+          set -euo pipefail
+          shellcheck --severity=error install.sh
+          while IFS= read -r module; do
+            [[ -z "$module" ]] && continue
+            shellcheck --severity=error -s bash "$module"
+          done < src/manifest.txt
+
       - name: Publish generated modular source
         if: success() && github.actor != 'github-actions[bot]'
         shell: bash
@@ -95,18 +110,3 @@ jobs:
           git add -A
           git commit -m 'refactor: regenerate hardened modular installer'
           git push origin HEAD:${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
-
-      - name: Install ShellCheck
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y shellcheck
-
-      - name: Run ShellCheck at error severity
-        shell: bash
-        run: |
-          set -euo pipefail
-          shellcheck --severity=error install.sh
-          while IFS= read -r module; do
-            [[ -z "$module" ]] && continue
-            shellcheck --severity=error -s bash "$module"
-          done < src/manifest.txt
