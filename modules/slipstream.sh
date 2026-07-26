@@ -7,12 +7,66 @@ slipstream_ports() {
 }
 slipstream_dependencies() { printf '%s\n' slowdns; }
 
+slipstream_rust_target() {
+  case "${HEXTUNNEL_ARCH:-$(normalize_architecture)}" in
+    amd64) printf '%s' x86_64-unknown-linux-gnu ;;
+    arm64) printf '%s' aarch64-unknown-linux-gnu ;;
+    *) return 1 ;;
+  esac
+}
+
+slipstream_install_rust_toolchain() {
+  local root="${HEXTUNNEL_RUST_ROOT:-/opt/hextunnel-rust}"
+  local toolchain="${HEXTUNNEL_RUST_TOOLCHAIN:-1.97.0}"
+  local target url checksum_url expected actual work rustup_init rustc cargo
+  target="$(slipstream_rust_target)" || die "SlipStream no tiene toolchain Rust configurado para ${HEXTUNNEL_ARCH:-$(normalize_architecture)}."
+  url="${HEXTUNNEL_RUSTUP_INIT_URL:-https://static.rust-lang.org/rustup/dist/${target}/rustup-init}"
+  checksum_url="${HEXTUNNEL_RUSTUP_INIT_SHA256_URL:-${url}.sha256}"
+  expected="${HEXTUNNEL_RUSTUP_INIT_SHA256:-}"
+  [[ "$toolchain" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "Versión Rust inválida: $toolchain"
+
+  if [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]]; then
+    log_dry "instalar Rust $toolchain para $target en $root mediante rustup-init verificado"
+    return 0
+  fi
+
+  work="$(mktemp -d /tmp/hextunnel-rustup.XXXXXX)"
+  rustup_init="$work/rustup-init"
+  curl -fL --retry 3 --connect-timeout 10 -o "$rustup_init" "$url"
+  actual="$(sha256sum "$rustup_init" | awk '{print tolower($1)}')"
+  if [[ -z "$expected" ]]; then
+    [[ "$url" == https://static.rust-lang.org/* && "$checksum_url" == https://static.rust-lang.org/* ]] \
+      || { rm -rf "$work"; die "Un rustup-init no oficial requiere HEXTUNNEL_RUSTUP_INIT_SHA256 explícito."; }
+    curl -fL --retry 3 --connect-timeout 10 -o "$work/rustup-init.sha256" "$checksum_url"
+    expected="$(awk 'NR==1 {print tolower($1)}' "$work/rustup-init.sha256")"
+  fi
+  [[ "$expected" =~ ^[a-fA-F0-9]{64}$ ]] || { rm -rf "$work"; die "Checksum rustup-init inválido."; }
+  [[ "$actual" == "${expected,,}" ]] || { rm -rf "$work"; die "El SHA-256 de rustup-init no coincide."; }
+  chmod 700 "$rustup_init"
+
+  backup_path "$root"
+  rm -rf "$root"
+  install -d -m 700 "$root/rustup" "$root/cargo"
+  RUSTUP_HOME="$root/rustup" CARGO_HOME="$root/cargo" \
+    "$rustup_init" -y --no-modify-path --profile minimal \
+      --default-host "$target" --default-toolchain "$toolchain"
+  rm -rf "$work"
+
+  rustc="$root/cargo/bin/rustc"
+  cargo="$root/cargo/bin/cargo"
+  [[ -x "$rustc" && -x "$cargo" ]] || die "El toolchain Rust aislado no instaló rustc y cargo."
+  RUSTUP_HOME="$root/rustup" CARGO_HOME="$root/cargo" "$rustc" --version \
+    | grep -Fq "rustc $toolchain " \
+    || die "El toolchain Rust instalado no corresponde a $toolchain."
+}
+
 slipstream_install() {
   local domain="${HEXTUNNEL_SLIPSTREAM_DOMAIN:-}"
   local slowdns_ns="${HEXTUNNEL_SLOWDNS_NS:-}"
   local install_dir="${HEXTUNNEL_SLIPSTREAM_DIR:-/opt/slipstream-rust}"
+  local rust_root="${HEXTUNNEL_RUST_ROOT:-/opt/hextunnel-rust}"
   local commit="${HEXTUNNEL_SLIPSTREAM_COMMIT:-bc772dd07d9a136dbd7553b0da575526de207847}"
-  local external_ip dns_address dns_port common_name previous_address previous_port
+  local external_ip dns_address dns_port common_name previous_address previous_port cargo
   if [[ -z "$domain" && "${HEXTUNNEL_NON_INTERACTIVE:-0}" != 1 ]]; then
     read -r -p "Dominio delegado para SlipStream: " domain
   fi
@@ -27,9 +81,10 @@ slipstream_install() {
   common_name="${domain:0:64}"
 
   run_cmd apt-get update
-  run_cmd apt-get install -y git cargo rustc pkg-config libssl-dev dante-server dnsdist openssl ca-certificates
+  run_cmd apt-get install -y git curl build-essential pkg-config libssl-dev dante-server dnsdist openssl ca-certificates
   ensure_system_user hextunnel-slipstream
-  backup_paths "$install_dir" /etc/danted.conf /etc/dnsdist/dnsdist.conf /etc/systemd/system/slipstream.service /etc/slipstream
+  backup_paths "$install_dir" "$rust_root" /etc/danted.conf /etc/dnsdist/dnsdist.conf /etc/systemd/system/slipstream.service /etc/slipstream
+  slipstream_install_rust_toolchain
 
   if [[ "${HEXTUNNEL_DRY_RUN:-0}" != 1 ]]; then
     if [[ -d "$install_dir/.git" ]]; then
@@ -41,7 +96,9 @@ slipstream_install() {
     git -C "$install_dir" checkout --detach "$commit"
     [[ "$(git -C "$install_dir" rev-parse HEAD)" == "$commit" ]] || die "No se pudo fijar el commit de SlipStream."
     git -C "$install_dir" submodule update --init --recursive
-    cargo build --release -p slipstream-server --manifest-path "$install_dir/Cargo.toml"
+    cargo="$rust_root/cargo/bin/cargo"
+    RUSTUP_HOME="$rust_root/rustup" CARGO_HOME="$rust_root/cargo" \
+      "$cargo" build --locked --release -p slipstream-server --manifest-path "$install_dir/Cargo.toml"
     [[ -x "$install_dir/target/release/slipstream-server" ]] || die "No se generó slipstream-server."
   fi
 
@@ -140,6 +197,8 @@ EOF
 slipstream_uninstall() {
   local restore_address="${HEXTUNNEL_SLOWDNS_LISTEN_ADDRESS:-$(primary_ipv4)}"
   local restore_port="${HEXTUNNEL_SLOWDNS_LISTEN_PORT:-53}"
+  local install_dir="${HEXTUNNEL_SLIPSTREAM_DIR:-/opt/slipstream-rust}"
+  local rust_root="${HEXTUNNEL_RUST_ROOT:-/opt/hextunnel-rust}"
   if [[ -r /etc/slipstream/slowdns-listener.env ]]; then
     # shellcheck disable=SC1091
     source /etc/slipstream/slowdns-listener.env
@@ -149,9 +208,9 @@ slipstream_uninstall() {
   safe_stop_disable_service dnsdist
   safe_stop_disable_service slipstream
   safe_stop_disable_service danted
-  backup_paths /etc/dnsdist/dnsdist.conf /etc/danted.conf /etc/systemd/system/slipstream.service /etc/slipstream
+  backup_paths /etc/dnsdist/dnsdist.conf /etc/danted.conf /etc/systemd/system/slipstream.service /etc/slipstream "$install_dir" "$rust_root"
   run_cmd rm -f /etc/dnsdist/dnsdist.conf /etc/danted.conf /etc/systemd/system/slipstream.service
-  run_cmd rm -rf /etc/slipstream
+  run_cmd rm -rf /etc/slipstream "$install_dir" "$rust_root"
   systemd_reload
   slowdns_set_listener "$restore_address" "$restore_port"
   remove_managed_system_user hextunnel-slipstream
@@ -164,6 +223,8 @@ slipstream_validate() {
   [[ -x "$install_dir/target/release/slipstream-server" && -s /etc/dnsdist/dnsdist.conf && -s /etc/slipstream/key.pem && -s /etc/slipstream/slowdns-listener.env ]]
   runuser -u hextunnel-slipstream -- test -r /etc/slipstream/key.pem
   dnsdist --check-config -C /etc/dnsdist/dnsdist.conf >/dev/null 2>&1 || dnsdist --check-config >/dev/null 2>&1
+  systemctl is-active --quiet slipstream
+  systemctl is-active --quiet dnsdist
 }
 
 slipstream_doctor() {
