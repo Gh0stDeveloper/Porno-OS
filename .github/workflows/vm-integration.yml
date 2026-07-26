@@ -69,7 +69,7 @@ jobs:
           sudo sshd -t
           sudo /usr/local/bin/xray run -test -config /etc/xray/config.json
           sudo haproxy -c -f /etc/hextunnel/haproxy-xray.cfg
-          sudo runuser -u sslh -- test -r /etc/hextunnel/sslh.cfg
+          sudo runuser -u sslh -- test -r /etc/sslh/hextunnel.cfg
           sudo runuser -u hextunnel-hysteria2 -- test -r /etc/hysteria2/server.key
 
       - name: Exercise account lifecycle
