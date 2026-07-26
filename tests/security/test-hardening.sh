@@ -31,6 +31,9 @@ grep -q "webmin_set_config_value ssl 1" modules/webmin.sh
 grep -q "install -m 640 -o root -g hextunnel-hysteria2" lib/accounts.sh
 grep -q "runuser -u hextunnel-slowdns -- test -r" modules/slowdns.sh
 grep -q "apt-get install -y git curl build-essential cmake pkg-config" modules/slipstream.sh
+grep -q "local binary=/usr/local/libexec/hextunnel/slipstream-server" modules/slipstream.sh
+grep -q "install -m 755 .*slipstream-server.*\$binary" modules/slipstream.sh
+grep -q "runuser -u hextunnel-slipstream -- test -x \$binary" modules/slipstream.sh
 grep -q "openssl rand -hex 16 > /etc/slipstream/reset-seed" modules/slipstream.sh
 grep -q "grep -Eq '\^\[0-9a-f\]{32}\$'" modules/slipstream.sh
 grep -q "write_file /etc/dnsdist/dnsdist.conf 644" modules/slipstream.sh
