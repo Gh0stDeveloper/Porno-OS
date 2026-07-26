@@ -21,7 +21,7 @@ ssh_allow_port_conflict() {
 
 ssh_install_packages() {
   run_cmd apt-get update
-  run_cmd apt-get install -y \
+  run_cmd apt-get install -y --no-install-recommends \
     openssh-server stunnel4 sslh nodejs openssl ca-certificates fail2ban
 }
 
