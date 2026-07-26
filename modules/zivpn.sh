@@ -86,9 +86,32 @@ EOF
 EOF
 }
 
+zivpn_install_nat() {
+  install_systemd_unit hextunnel-zivpn-nat.service 644 <<'EOF'
+[Unit]
+Description=Hex Tunnel ZiVPN UDP range NAT
+After=network-online.target
+Wants=network-online.target
+Before=zivpn.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/hextunnel-nat apply zivpn
+ExecStop=/usr/local/bin/hextunnel-nat remove zivpn
+RemainAfterExit=yes
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  safe_restart_service hextunnel-zivpn-nat
+}
+
 zivpn_install() {
   run_cmd apt-get update
-  run_cmd apt-get install -y curl jq ca-certificates util-linux
+  run_cmd apt-get install -y curl jq ca-certificates util-linux iptables nftables
   ensure_dir 700 /etc/zivpn
   zivpn_install_binary
   local password obfs
@@ -118,11 +141,12 @@ EOF
     chmod 600 /etc/zivpn/users.txt
     zivpn_rebuild_config_passwords
   }
+  zivpn_install_nat
   install_systemd_unit zivpn.service 644 <<'EOF'
 [Unit]
 Description=Hex Tunnel ZiVPN server
-After=network-online.target
-Wants=network-online.target
+After=network-online.target hextunnel-zivpn-nat.service
+Wants=network-online.target hextunnel-zivpn-nat.service
 
 [Service]
 Type=simple
@@ -149,9 +173,11 @@ EOF
 
 zivpn_uninstall() {
   safe_stop_disable_service zivpn
-  backup_paths /etc/zivpn /etc/systemd/system/zivpn.service /usr/local/bin/zivpn /usr/local/sbin/hextunnel-zivpn-expire /etc/cron.d/hextunnel-zivpn-expiry
+  safe_stop_disable_service hextunnel-zivpn-nat
+  nat_remove zivpn
+  backup_paths /etc/zivpn /etc/systemd/system/zivpn.service /etc/systemd/system/hextunnel-zivpn-nat.service /usr/local/bin/zivpn /usr/local/sbin/hextunnel-zivpn-expire /etc/cron.d/hextunnel-zivpn-expiry
   run_cmd rm -rf /etc/zivpn
-  run_cmd rm -f /etc/systemd/system/zivpn.service /usr/local/bin/zivpn /usr/local/sbin/hextunnel-zivpn-expire /etc/cron.d/hextunnel-zivpn-expiry
+  run_cmd rm -f /etc/systemd/system/zivpn.service /etc/systemd/system/hextunnel-zivpn-nat.service /usr/local/bin/zivpn /usr/local/sbin/hextunnel-zivpn-expire /etc/cron.d/hextunnel-zivpn-expiry
   systemd_reload
   firewall_close_port udp 5667
 }
@@ -161,12 +187,18 @@ zivpn_validate() {
   [[ -x /usr/local/bin/zivpn && -s /etc/zivpn/config.json && -s /etc/zivpn/zivpn.key && -s /etc/zivpn/users.txt ]]
   jq empty /etc/zivpn/config.json
   awk 'NF != 3 {exit 1}' /etc/zivpn/users.txt
+  nat_is_present zivpn
 }
 
 zivpn_doctor() {
+  local failed=0
   printf 'service=%s port=' "$(systemctl is-active zivpn 2>/dev/null || true)"
-  port_is_listening udp 5667 && printf open || printf closed
+  systemctl is-active --quiet zivpn || failed=1
+  if port_is_listening udp 5667; then printf open; else printf closed; failed=1; fi
+  printf ' nat='
+  if nat_is_present zivpn; then printf active; else printf missing; failed=1; fi
   printf ' users=%s config=' "$(wc -l < /etc/zivpn/users.txt 2>/dev/null || printf 0)"
-  jq empty /etc/zivpn/config.json >/dev/null 2>&1 && printf valid || printf invalid
+  if jq empty /etc/zivpn/config.json >/dev/null 2>&1; then printf valid; else printf invalid; failed=1; fi
   printf '\n'
+  return "$failed"
 }
