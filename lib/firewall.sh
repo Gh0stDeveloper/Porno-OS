@@ -113,19 +113,16 @@ firewall_open_port() {
 firewall_ufw_rule_numbers() {
   local tag="$1" output
   output="$(ufw status numbered 2>/dev/null || true)"
-  awk -v tag="$tag" '
-    index($0, tag) {
-      if (match($0, /^\[ *([0-9]+)\]/, values)) print values[1]
-    }
-  ' <<< "$output" | sort -rn
+  printf '%s\n' "$output" \
+    | sed -n "/$(printf '%s' "$tag" | sed 's/[][\\.^$*+?{}|()]/\\&/g')/s/^\[ *\([0-9][0-9]*\)\].*/\1/p" \
+    | sort -rn
 }
 
 firewall_nft_rule_handles() {
   local tag="$1" output
   output="$(nft -a list chain inet hextunnel input 2>/dev/null || true)"
-  awk -v tag="comment \"$tag\"" '
-    index($0, tag) && match($0, / handle ([0-9]+)$/, values) { print values[1] }
-  ' <<< "$output"
+  printf '%s\n' "$output" \
+    | sed -n "/comment \"$(printf '%s' "$tag" | sed 's/[][\\.^$*+?{}|()]/\\&/g')\"/s/.* handle \([0-9][0-9]*\)$/\1/p"
 }
 
 firewall_close_port() {
