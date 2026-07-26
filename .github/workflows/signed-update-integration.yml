@@ -109,7 +109,7 @@ jobs:
           transaction="$(sudo readlink -f /var/lib/hextunnel/last-successful)"
           [[ "$transaction" != "$before" ]]
           [[ "$(sudo cat "$transaction/status")" == COMMITTED ]]
-          sudo hextunnel rollback "$(basename "$transaction")" \
+          sudo hextunnel rollback "$(basename "$transaction")" --force \
             2>&1 | tee /tmp/update-rollback.log
           sudo test ! -e /opt/hextunnel/SIGNED-UPDATE-VERSION
           sudo test -x /opt/hextunnel/install.sh
