@@ -20,11 +20,17 @@ firewall_snapshot() {
   backend="$(firewall_backend)"
   printf '%s\n' "$backend" > "$HEXTUNNEL_TRANSACTION_DIR/firewall.backend"
   case "$backend" in
-    ufw) backup_path /etc/ufw ;;
-    nft) nft list ruleset > "$HEXTUNNEL_TRANSACTION_DIR/firewall.nft" 2>/dev/null || true ;;
+    ufw)
+      backup_path /etc/ufw
+      ;;
+    nft)
+      nft list ruleset > "$HEXTUNNEL_TRANSACTION_DIR/firewall.nft" 2>/dev/null || true
+      ;;
     iptables)
       iptables-save > "$HEXTUNNEL_TRANSACTION_DIR/firewall.iptables" 2>/dev/null || true
-      command_exists ip6tables-save && ip6tables-save > "$HEXTUNNEL_TRANSACTION_DIR/firewall.ip6tables" 2>/dev/null || true
+      command_exists ip6tables-save \
+        && ip6tables-save > "$HEXTUNNEL_TRANSACTION_DIR/firewall.ip6tables" 2>/dev/null \
+        || true
       ;;
   esac
 }
@@ -34,7 +40,9 @@ firewall_restore() {
   [[ -f "$dir/firewall.backend" ]] || return 0
   backend="$(cat "$dir/firewall.backend")"
   case "$backend" in
-    ufw) ufw reload >/dev/null 2>&1 || true ;;
+    ufw)
+      ufw reload >/dev/null 2>&1 || true
+      ;;
     nft)
       if [[ -s "$dir/firewall.nft" ]]; then
         nft flush ruleset >/dev/null 2>&1 || true
@@ -42,8 +50,12 @@ firewall_restore() {
       fi
       ;;
     iptables)
-      [[ -s "$dir/firewall.iptables" ]] && iptables-restore < "$dir/firewall.iptables" >/dev/null 2>&1 || true
-      [[ -s "$dir/firewall.ip6tables" ]] && ip6tables-restore < "$dir/firewall.ip6tables" >/dev/null 2>&1 || true
+      [[ -s "$dir/firewall.iptables" ]] \
+        && iptables-restore < "$dir/firewall.iptables" >/dev/null 2>&1 \
+        || true
+      [[ -s "$dir/firewall.ip6tables" ]] \
+        && ip6tables-restore < "$dir/firewall.ip6tables" >/dev/null 2>&1 \
+        || true
       ;;
   esac
 }
@@ -54,9 +66,12 @@ firewall_open_port() {
   tag="$(firewall_rule_tag "$protocol" "$port")"
   log_info "Firewall: permitir $protocol/$port desde $source mediante $backend"
   [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] && return 0
+
   case "$backend" in
     ufw)
-      if ufw status | grep -Fq "$tag"; then return 0; fi
+      if ufw status | grep -Fq "$tag"; then
+        return 0
+      fi
       if [[ "$source" == 0.0.0.0/0 || "$source" == ::/0 ]]; then
         ufw allow "$port/$protocol" comment "$tag"
       else
@@ -67,7 +82,9 @@ firewall_open_port() {
       nft list table inet hextunnel >/dev/null 2>&1 || nft add table inet hextunnel
       nft list chain inet hextunnel input >/dev/null 2>&1 \
         || nft 'add chain inet hextunnel input { type filter hook input priority -5; policy accept; }'
-      nft -a list chain inet hextunnel input | grep -Fq "comment \"$tag\"" && return 0
+      if nft -a list chain inet hextunnel input 2>/dev/null | grep -Fq "comment \"$tag\""; then
+        return 0
+      fi
       if [[ "$source" == 0.0.0.0/0 || "$source" == ::/0 ]]; then
         nft add rule inet hextunnel input "$protocol" dport "$port" accept comment "$tag"
       else
@@ -79,45 +96,80 @@ firewall_open_port() {
     iptables)
       if [[ "$source" == *:* ]]; then
         command_exists ip6tables || die "ip6tables es necesario para la fuente IPv6 $source"
-        ip6tables -C INPUT -p "$protocol" -s "$source" --dport "$port" -m comment --comment "$tag" -j ACCEPT 2>/dev/null \
-          || ip6tables -I INPUT -p "$protocol" -s "$source" --dport "$port" -m comment --comment "$tag" -j ACCEPT
+        ip6tables -C INPUT -p "$protocol" -s "$source" --dport "$port" \
+          -m comment --comment "$tag" -j ACCEPT 2>/dev/null \
+          || ip6tables -I INPUT -p "$protocol" -s "$source" --dport "$port" \
+            -m comment --comment "$tag" -j ACCEPT
       else
-        iptables -C INPUT -p "$protocol" -s "$source" --dport "$port" -m comment --comment "$tag" -j ACCEPT 2>/dev/null \
-          || iptables -I INPUT -p "$protocol" -s "$source" --dport "$port" -m comment --comment "$tag" -j ACCEPT
+        iptables -C INPUT -p "$protocol" -s "$source" --dport "$port" \
+          -m comment --comment "$tag" -j ACCEPT 2>/dev/null \
+          || iptables -I INPUT -p "$protocol" -s "$source" --dport "$port" \
+            -m comment --comment "$tag" -j ACCEPT
       fi
       ;;
   esac
 }
 
+firewall_ufw_rule_numbers() {
+  local tag="$1" output
+  output="$(ufw status numbered 2>/dev/null || true)"
+  awk -v tag="$tag" '
+    index($0, tag) {
+      if (match($0, /^\[ *([0-9]+)\]/, values)) print values[1]
+    }
+  ' <<< "$output" | sort -rn
+}
+
+firewall_nft_rule_handles() {
+  local tag="$1" output
+  output="$(nft -a list chain inet hextunnel input 2>/dev/null || true)"
+  awk -v tag="comment \"$tag\"" '
+    index($0, tag) && match($0, / handle ([0-9]+)$/, values) { print values[1] }
+  ' <<< "$output"
+}
+
 firewall_close_port() {
   local protocol="$1" port="$2" backend tag number handle
+  local numbers=() handles=()
   backend="$(firewall_backend)"
   tag="$(firewall_rule_tag "$protocol" "$port")"
-  [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] && { log_dry "cerrar reglas etiquetadas $tag"; return 0; }
+
+  if [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]]; then
+    log_dry "cerrar reglas etiquetadas $tag"
+    return 0
+  fi
+
   case "$backend" in
     ufw)
-      while read -r number; do
+      mapfile -t numbers < <(firewall_ufw_rule_numbers "$tag")
+      for number in "${numbers[@]}"; do
         [[ "$number" =~ ^[0-9]+$ ]] || continue
         yes | ufw delete "$number" >/dev/null 2>&1 || true
-      done < <(ufw status numbered 2>/dev/null | grep -F "$tag" | sed -n 's/^\[ *\([0-9][0-9]*\)\].*/\1/p' | sort -rn)
+      done
       ;;
     nft)
-      while read -r handle; do
+      mapfile -t handles < <(firewall_nft_rule_handles "$tag")
+      for handle in "${handles[@]}"; do
         [[ "$handle" =~ ^[0-9]+$ ]] || continue
         nft delete rule inet hextunnel input handle "$handle" >/dev/null 2>&1 || true
-      done < <(nft -a list chain inet hextunnel input 2>/dev/null | grep -F "comment \"$tag\"" | sed -n 's/.* handle \([0-9][0-9]*\)$/\1/p')
+      done
       ;;
     iptables)
-      while iptables -C INPUT -p "$protocol" --dport "$port" -m comment --comment "$tag" -j ACCEPT 2>/dev/null; do
-        iptables -D INPUT -p "$protocol" --dport "$port" -m comment --comment "$tag" -j ACCEPT
+      while iptables -C INPUT -p "$protocol" --dport "$port" \
+        -m comment --comment "$tag" -j ACCEPT 2>/dev/null; do
+        iptables -D INPUT -p "$protocol" --dport "$port" \
+          -m comment --comment "$tag" -j ACCEPT
       done
       if command_exists ip6tables; then
-        while ip6tables -C INPUT -p "$protocol" --dport "$port" -m comment --comment "$tag" -j ACCEPT 2>/dev/null; do
-          ip6tables -D INPUT -p "$protocol" --dport "$port" -m comment --comment "$tag" -j ACCEPT
+        while ip6tables -C INPUT -p "$protocol" --dport "$port" \
+          -m comment --comment "$tag" -j ACCEPT 2>/dev/null; do
+          ip6tables -D INPUT -p "$protocol" --dport "$port" \
+            -m comment --comment "$tag" -j ACCEPT
         done
       fi
       ;;
   esac
+  return 0
 }
 
 firewall_apply_module_ports() {
