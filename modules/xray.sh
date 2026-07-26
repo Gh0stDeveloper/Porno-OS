@@ -8,6 +8,7 @@ tcp 8080
 tcp 8880
 EOF
 }
+
 xray_dependencies() { printf '%s\n' ssh; }
 
 xray_asset_name() {
@@ -30,17 +31,31 @@ xray_install_verified_binary() {
   [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] && { rm -rf "$tmp"; return 0; }
   expected="$(awk -F'= *' 'toupper($1) == "SHA2-256" {print tolower($2); exit}' "$tmp/xray.zip.dgst")"
   actual="$(sha256sum "$tmp/xray.zip" | awk '{print tolower($1)}')"
-  [[ -n "$expected" && "$actual" == "$expected" ]] || { rm -rf "$tmp"; die "La verificación SHA-256 de Xray falló."; }
+  [[ -n "$expected" && "$actual" == "$expected" ]] || {
+    rm -rf "$tmp"
+    die "La verificación SHA-256 de Xray falló."
+  }
   unzip -q "$tmp/xray.zip" -d "$tmp/unpacked"
-  [[ -f "$tmp/unpacked/xray" ]] || { rm -rf "$tmp"; die "El archivo Xray no contiene el binario."; }
-  backup_paths /usr/local/bin/xray /usr/local/share/xray/geoip.dat /usr/local/share/xray/geosite.dat
+  [[ -f "$tmp/unpacked/xray" ]] || {
+    rm -rf "$tmp"
+    die "El archivo Xray no contiene el binario."
+  }
+  backup_paths \
+    /usr/local/bin/xray \
+    /usr/local/share/xray/geoip.dat \
+    /usr/local/share/xray/geosite.dat
   install -d -m 755 /usr/local/share/xray
   install -m 755 "$tmp/unpacked/xray" /usr/local/bin/xray.new
-  [[ -f "$tmp/unpacked/geoip.dat" ]] && install -m 644 "$tmp/unpacked/geoip.dat" /usr/local/share/xray/geoip.dat
-  [[ -f "$tmp/unpacked/geosite.dat" ]] && install -m 644 "$tmp/unpacked/geosite.dat" /usr/local/share/xray/geosite.dat
+  [[ -f "$tmp/unpacked/geoip.dat" ]] && \
+    install -m 644 "$tmp/unpacked/geoip.dat" /usr/local/share/xray/geoip.dat
+  [[ -f "$tmp/unpacked/geosite.dat" ]] && \
+    install -m 644 "$tmp/unpacked/geosite.dat" /usr/local/share/xray/geosite.dat
   if [[ -s /etc/xray/config.json ]]; then
-    /usr/local/bin/xray.new run -test -config /etc/xray/config.json \
-      || { rm -f /usr/local/bin/xray.new; rm -rf "$tmp"; die "La versión descargada rechazó la configuración Xray actual."; }
+    /usr/local/bin/xray.new run -test -config /etc/xray/config.json || {
+      rm -f /usr/local/bin/xray.new
+      rm -rf "$tmp"
+      die "La versión descargada rechazó la configuración Xray actual."
+    }
   fi
   mv -f /usr/local/bin/xray.new /usr/local/bin/xray
   rm -rf "$tmp"
@@ -48,15 +63,15 @@ xray_install_verified_binary() {
 
 xray_install_grpc_router() {
   run_cmd apt-get install -y haproxy
-  backup_paths /etc/hextunnel/haproxy-xray.cfg /etc/systemd/system/hextunnel-haproxy.service
+  backup_paths \
+    /etc/hextunnel/haproxy-xray.cfg \
+    /etc/systemd/system/hextunnel-haproxy.service
   write_file /etc/hextunnel/haproxy-xray.cfg 644 <<'EOF'
 global
   log /dev/log local0
   maxconn 4096
   user haproxy
   group haproxy
-
-  ssl-default-bind-options ssl-min-ver TLSv1.2
 
 defaults
   log global
@@ -72,7 +87,7 @@ frontend xray-grpc-router
   acl is_vmess_grpc path_beg /vmess-grpc-svc
   use_backend vless-grpc if is_vless_grpc
   use_backend vmess-grpc if is_vmess_grpc
-  http-request deny deny_status 404
+  default_backend reject-grpc
 
 backend vless-grpc
   mode http
@@ -81,6 +96,10 @@ backend vless-grpc
 backend vmess-grpc
   mode http
   server vmess 127.0.0.1:10012 proto h2 send-proxy-v2 check
+
+backend reject-grpc
+  mode http
+  http-request deny deny_status 404
 EOF
   install_systemd_unit hextunnel-haproxy.service 644 <<'EOF'
 [Unit]
@@ -90,8 +109,8 @@ Wants=network-online.target
 
 [Service]
 Type=notify
-ExecStart=/usr/sbin/haproxy -Ws -f /etc/hextunnel/haproxy-xray.cfg -p /run/hextunnel-haproxy.pid
-ExecReload=/usr/sbin/haproxy -Ws -f /etc/hextunnel/haproxy-xray.cfg -p /run/hextunnel-haproxy.pid -sf $MAINPID
+ExecStart=/usr/sbin/haproxy -Ws -f /etc/hextunnel/haproxy-xray.cfg -p /run/hextunnel-haproxy/haproxy.pid
+ExecReload=/usr/sbin/haproxy -Ws -f /etc/hextunnel/haproxy-xray.cfg -p /run/hextunnel-haproxy/haproxy.pid -sf $MAINPID
 Restart=on-failure
 RestartSec=2s
 NoNewPrivileges=true
@@ -105,7 +124,8 @@ RuntimeDirectoryMode=0750
 [Install]
 WantedBy=multi-user.target
 EOF
-  safe_restart_service hextunnel-haproxy "haproxy -c -f /etc/hextunnel/haproxy-xray.cfg"
+  safe_restart_service hextunnel-haproxy \
+    "haproxy -c -f /etc/hextunnel/haproxy-xray.cfg"
 }
 
 xray_install_expiry_job() {
@@ -120,7 +140,12 @@ exec 9>/run/lock/hextunnel-xray.lock
 flock -w 30 9
 work="$(mktemp -d /tmp/hextunnel-xray-expire.XXXXXX)"
 trap 'rm -rf "$work"' EXIT
-mapfile -t expired < <(for protocol in vless vmess trojan; do file="/etc/xray/${protocol}.txt"; [[ -f "$file" ]] && awk -v today="$now" '$3 < today {print $1}' "$file"; done | sort -u)
+mapfile -t expired < <(
+  for protocol in vless vmess trojan; do
+    file="/etc/xray/${protocol}.txt"
+    [[ -f "$file" ]] && awk -v today="$now" '$3 < today {print $1}' "$file"
+  done | sort -u
+)
 ((${#expired[@]} > 0)) || exit 0
 expired_json="$(printf '%s\n' "${expired[@]}" | jq -R . | jq -s .)"
 jq --argjson expired "$expired_json" '
@@ -153,9 +178,15 @@ xray_install() {
   ensure_dir 700 /etc/xray
   ensure_dir 750 /var/log/xray
   xray_install_verified_binary
-  backup_paths /etc/xray/config.json /etc/systemd/system/xray.service /etc/xray/vless.txt /etc/xray/vmess.txt /etc/xray/trojan.txt
+  backup_paths \
+    /etc/xray/config.json \
+    /etc/systemd/system/xray.service \
+    /etc/xray/vless.txt \
+    /etc/xray/vmess.txt \
+    /etc/xray/trojan.txt
   if [[ ! -s /etc/xray/config.json || "${HEXTUNNEL_FORCE:-0}" == 1 ]]; then
-    [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] || install -m 600 "$HEXTUNNEL_ROOT/templates/xray/config.json" /etc/xray/config.json
+    [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] || \
+      install -m 600 "$HEXTUNNEL_ROOT/templates/xray/config.json" /etc/xray/config.json
   fi
   [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] || {
     touch /etc/xray/vless.txt /etc/xray/vmess.txt /etc/xray/trojan.txt
@@ -187,18 +218,34 @@ AmbientCapabilities=CAP_NET_BIND_SERVICE
 WantedBy=multi-user.target
 EOF
   xray_install_expiry_job
-  safe_restart_service xray "/usr/local/bin/xray run -test -config /etc/xray/config.json"
+  safe_restart_service xray \
+    "/usr/local/bin/xray run -test -config /etc/xray/config.json"
 }
 
 xray_uninstall() {
   safe_stop_disable_service xray
   safe_stop_disable_service hextunnel-haproxy
-  backup_paths /etc/systemd/system/xray.service /etc/systemd/system/hextunnel-haproxy.service /etc/hextunnel/haproxy-xray.cfg /etc/cron.d/hextunnel-xray-expiry /usr/local/sbin/hextunnel-xray-expire /usr/local/bin/xray /etc/xray
-  run_cmd rm -f /etc/systemd/system/xray.service /etc/systemd/system/hextunnel-haproxy.service /etc/hextunnel/haproxy-xray.cfg /etc/cron.d/hextunnel-xray-expiry /usr/local/sbin/hextunnel-xray-expire /usr/local/bin/xray
+  backup_paths \
+    /etc/systemd/system/xray.service \
+    /etc/systemd/system/hextunnel-haproxy.service \
+    /etc/hextunnel/haproxy-xray.cfg \
+    /etc/cron.d/hextunnel-xray-expiry \
+    /usr/local/sbin/hextunnel-xray-expire \
+    /usr/local/bin/xray \
+    /etc/xray
+  run_cmd rm -f \
+    /etc/systemd/system/xray.service \
+    /etc/systemd/system/hextunnel-haproxy.service \
+    /etc/hextunnel/haproxy-xray.cfg \
+    /etc/cron.d/hextunnel-xray-expiry \
+    /usr/local/sbin/hextunnel-xray-expire \
+    /usr/local/bin/xray
   run_cmd rm -rf /etc/xray
   systemd_reload
   local port
-  for port in 443 80 8080 8880; do firewall_close_port tcp "$port"; done
+  for port in 443 80 8080 8880; do
+    firewall_close_port tcp "$port"
+  done
 }
 
 xray_validate() {
@@ -206,6 +253,8 @@ xray_validate() {
   [[ -x /usr/local/bin/xray ]] || return 1
   /usr/local/bin/xray run -test -config /etc/xray/config.json
   haproxy -c -f /etc/hextunnel/haproxy-xray.cfg >/dev/null
+  systemctl is-active --quiet hextunnel-haproxy
+  systemctl is-active --quiet xray
 }
 
 xray_doctor() {
@@ -215,11 +264,24 @@ xray_doctor() {
     "$(systemctl is-active hextunnel-haproxy 2>/dev/null || true)"
   systemctl is-active --quiet xray || failed=1
   systemctl is-active --quiet hextunnel-haproxy || failed=1
-  /usr/local/bin/xray version 2>/dev/null | head -n1 || { printf 'not-installed'; failed=1; }
+  /usr/local/bin/xray version 2>/dev/null | head -n1 || {
+    printf 'not-installed'
+    failed=1
+  }
   printf ' config='
-  if /usr/local/bin/xray run -test -config /etc/xray/config.json >/dev/null 2>&1; then printf valid; else printf invalid; failed=1; fi
+  if /usr/local/bin/xray run -test -config /etc/xray/config.json >/dev/null 2>&1; then
+    printf valid
+  else
+    printf invalid
+    failed=1
+  fi
   printf ' haproxy='
-  if haproxy -c -f /etc/hextunnel/haproxy-xray.cfg >/dev/null 2>&1; then printf valid; else printf invalid; failed=1; fi
+  if haproxy -c -f /etc/hextunnel/haproxy-xray.cfg >/dev/null 2>&1; then
+    printf valid
+  else
+    printf invalid
+    failed=1
+  fi
   printf '\n'
   return "$failed"
 }
