@@ -1,3 +1,3 @@
 error: Potential secrets detected:
-  src/modules/03-packages.sh:296: Private key
+  src/modules/03-packages.sh:296: Private key; previous='cat << EOF > /etc/hysteria/hysteria.key'
 
