@@ -10,6 +10,7 @@ on:
       - 'tests/**'
       - '.gitignore'
       - 'config/secrets.env.example'
+      - '.github/workflows/generate-modular.yml'
 
 permissions:
   contents: write
@@ -35,6 +36,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          python3 tools/preprocess_install.py --root .
           python3 tools/bootstrap_modularize.py --root .
           python3 tools/build.py --check --root .
           bash -n install.sh
@@ -51,7 +53,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          rm -f .modularize-trigger
+          rm -f .modularize-trigger .ci/migration-error.txt
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
