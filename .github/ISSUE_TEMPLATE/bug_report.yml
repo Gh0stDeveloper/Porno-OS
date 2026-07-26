@@ -1,0 +1,33 @@
+name: Reporte de error
+description: Reporta un fallo reproducible sin incluir credenciales.
+title: '[Bug]: '
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: No publiques tokens, contraseñas, claves privadas, IP privadas ni enlaces de acceso.
+  - type: input
+    id: os
+    attributes:
+      label: Sistema operativo
+      placeholder: Ubuntu 22.04, Debian 12, etc.
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Descripción
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Pasos para reproducir
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs sanitizados
+      description: Elimina tokens, claves, dominios privados y datos de usuarios.
+      render: shell
