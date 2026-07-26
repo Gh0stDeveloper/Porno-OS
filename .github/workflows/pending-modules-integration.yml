@@ -89,7 +89,12 @@ jobs:
               url=https://raw.githubusercontent.com/mahpud896/UDP-Custom/main/bin/udp-custom-linux-amd64
               curl -fL --retry 3 -o /tmp/udp-custom "$url"
               sha="$(sha256sum /tmp/udp-custom | awk '{print tolower($1)}')"
-              printf 'HEXTUNNEL_UDP_CUSTOM_BINARY_URL=%s\nHEXTUNNEL_UDP_CUSTOM_SHA256=%s\n' "$url" "$sha" >> /tmp/hextunnel.env
+              badvpn_ref=1.999.130
+              badvpn_url="https://codeload.github.com/ambrop72/badvpn/tar.gz/refs/tags/${badvpn_ref}"
+              curl -fL --retry 3 -o /tmp/badvpn.tar.gz "$badvpn_url"
+              badvpn_sha="$(sha256sum /tmp/badvpn.tar.gz | awk '{print tolower($1)}')"
+              printf 'HEXTUNNEL_UDP_CUSTOM_BINARY_URL=%s\nHEXTUNNEL_UDP_CUSTOM_SHA256=%s\nHEXTUNNEL_BADVPN_REF=%s\nHEXTUNNEL_BADVPN_SOURCE_URL=%s\nHEXTUNNEL_BADVPN_SHA256=%s\n' \
+                "$url" "$sha" "$badvpn_ref" "$badvpn_url" "$badvpn_sha" >> /tmp/hextunnel.env
               ;;
             slowdns)
               url=https://raw.githubusercontent.com/fisabiliyusri/SLDNS/main/slowdns/sldns-server
@@ -144,6 +149,7 @@ jobs:
               sudo systemctl is-active --quiet udp-custom
               sudo systemctl is-active --quiet hextunnel-badvpn
               sudo jq empty /etc/udp-custom/config.json
+              sudo test -x /usr/local/libexec/hextunnel-badvpn-udpgw
               sudo ss -lunp | grep -q ':36717 '
               sudo ss -lntp | grep -q ':7300 '
               ;;
@@ -164,6 +170,7 @@ jobs:
               sudo systemctl is-active --quiet webmin
               sudo grep -q '^ssl=1$' /etc/webmin/miniserv.conf
               sudo grep -q '^bind=127.0.0.1$' /etc/webmin/miniserv.conf
+              sudo test -s /usr/share/keyrings/hextunnel-webmin-developers.gpg
               sudo ss -lntp | grep -q '127.0.0.1:10000'
               curl -ksS --connect-timeout 10 -o /dev/null https://127.0.0.1:10000/
               ;;
@@ -207,6 +214,7 @@ jobs:
             udp-custom)
               test ! -e /etc/systemd/system/udp-custom.service
               test ! -e /usr/local/bin/udp-custom
+              test ! -e /usr/local/libexec/hextunnel-badvpn-udpgw
               ;;
             slowdns)
               test ! -e /etc/systemd/system/server-sldns.service
@@ -218,7 +226,8 @@ jobs:
               ;;
             webmin)
               test ! -e /etc/webmin
-              test ! -e /etc/apt/sources.list.d/webmin.list
+              test ! -e /etc/apt/sources.list.d/hextunnel-webmin.list
+              test ! -e /usr/share/keyrings/hextunnel-webmin-developers.gpg
               ;;
           esac
 
