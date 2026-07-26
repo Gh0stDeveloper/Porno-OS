@@ -1,0 +1,36 @@
+name: Fix Hysteria 2 account permissions
+on:
+  push:
+    branches: [feat/transactional-architecture]
+    paths: [.hysteria2-account-permission-fix]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/transactional-architecture
+          fetch-depth: 0
+      - name: Apply and validate Bash-only permission fix
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sed -i '/^[[:space:]]*chmod 600 \/etc\/hysteria2\/users.txt$/c\    chown root:hextunnel-hysteria2 /etc/hysteria2/users.txt\n    chmod 640 /etc/hysteria2/users.txt' lib/accounts.sh
+          sed -i 's|install -m 600 "$tmp" /etc/hysteria2/users.txt|install -m 640 -o root -g hextunnel-hysteria2 "$tmp" /etc/hysteria2/users.txt|' lib/accounts.sh
+
+          grep -q 'chown root:hextunnel-hysteria2 /etc/hysteria2/users.txt' lib/accounts.sh
+          grep -q 'install -m 640 -o root -g hextunnel-hysteria2 "$tmp" /etc/hysteria2/users.txt' lib/accounts.sh
+
+          rm -f .github/workflows/fix-hysteria2-account-permissions.yml .hysteria2-account-permission-fix
+          find install.sh bin lib modules tests -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+          bash tests/unit/test-core.sh
+          bash tests/unit/test-module-contract.sh
+          bash tests/security/test-hardening.sh
+
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'fix: preserve Hysteria 2 account file ownership'
+          git push origin HEAD:feat/transactional-architecture
