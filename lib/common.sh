@@ -89,7 +89,7 @@ load_runtime_config() {
 }
 
 ensure_system_user() {
-  local username="$1" group_created=0
+  local username="$1" group_created=0 marker_dir marker
   id -u "$username" >/dev/null 2>&1 && return 0
   if [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]]; then
     log_dry "crear usuario de sistema $username"
@@ -103,6 +103,27 @@ ensure_system_user() {
   if [[ -n "${HEXTUNNEL_TRANSACTION_DIR:-}" ]]; then
     printf 'USER|%s|%s\n' "$username" "$group_created" >> "$HEXTUNNEL_TRANSACTION_DIR/created-users.manifest"
   fi
+  marker_dir="$HEXTUNNEL_STATE/system-users"
+  marker="$marker_dir/$username"
+  ensure_dir 700 "$marker_dir"
+  backup_path "$marker"
+  printf 'created_at=%s\ngroup_created=%s\n' "$(date -Is)" "$group_created" > "$marker"
+  chmod 600 "$marker"
+}
+
+remove_managed_system_user() {
+  local username="$1" marker="$HEXTUNNEL_STATE/system-users/$username" group_created=0
+  [[ -f "$marker" ]] || return 0
+  # shellcheck disable=SC1090
+  source "$marker"
+  backup_path "$marker"
+  if [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]]; then
+    log_dry "eliminar usuario administrado $username"
+    return 0
+  fi
+  userdel "$username" >/dev/null 2>&1 || true
+  [[ "${group_created:-0}" == 1 ]] && groupdel "$username" >/dev/null 2>&1 || true
+  rm -f "$marker"
 }
 
 confirm_action() {
