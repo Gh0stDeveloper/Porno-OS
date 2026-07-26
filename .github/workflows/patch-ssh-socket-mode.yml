@@ -1,0 +1,95 @@
+name: Patch SSH socket activation mode
+on:
+  push:
+    branches: [feat/transactional-architecture]
+    paths: [.patch-ssh-socket-mode]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/transactional-architecture
+          fetch-depth: 0
+      - name: Apply reversible SSH socket migration in Bash
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          file=modules/ssh.sh
+
+          cat >> "$file" <<'EOF'
+
+ssh_switch_to_service_mode() {
+  local state_file="$HEXTUNNEL_STATE/ssh-socket.state" enabled=0 active=0
+  systemctl list-unit-files ssh.socket >/dev/null 2>&1 || return 0
+  systemctl is-enabled --quiet ssh.socket 2>/dev/null && enabled=1
+  systemctl is-active --quiet ssh.socket 2>/dev/null && active=1
+  ((enabled || active)) || return 0
+
+  backup_path "$state_file"
+  if [[ "${HEXTUNNEL_DRY_RUN:-0}" != 1 ]]; then
+    install -d -m 700 "$(dirname "$state_file")"
+    printf 'enabled=%s\nactive=%s\n' "$enabled" "$active" > "$state_file"
+    chmod 600 "$state_file"
+  fi
+
+  record_service_state ssh.socket
+  run_cmd systemctl disable --now ssh.socket || true
+}
+
+ssh_restore_socket_mode() {
+  local state_file="$HEXTUNNEL_STATE/ssh-socket.state" enabled=0 active=0
+  if [[ ! -f "$state_file" ]]; then
+    safe_restart_service ssh "sshd -t"
+    return 0
+  fi
+
+  # shellcheck disable=SC1090
+  source "$state_file"
+  backup_path "$state_file"
+  record_service_state ssh
+  record_service_state ssh.socket
+  run_cmd systemctl stop ssh || true
+  if [[ "$enabled" == 1 ]]; then
+    run_cmd systemctl enable ssh.socket
+  else
+    run_cmd systemctl disable ssh.socket || true
+  fi
+  if [[ "$active" == 1 ]]; then
+    run_cmd systemctl start ssh.socket
+  fi
+  [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] || rm -f "$state_file"
+}
+EOF
+
+          sed -i '0,/^  safe_restart_service ssh "sshd -t"$/s//  ssh_switch_to_service_mode\n  safe_restart_service ssh "sshd -t"/' "$file"
+
+          awk '
+            /^ssh_uninstall\(\)/ { in_uninstall=1 }
+            in_uninstall && /^  safe_restart_service ssh "sshd -t"$/ {
+              print "  ssh_restore_socket_mode"
+              next
+            }
+            in_uninstall && /^}/ { in_uninstall=0 }
+            { print }
+          ' "$file" > "$file.tmp"
+          mv "$file.tmp" "$file"
+
+          grep -q '^ssh_switch_to_service_mode()' "$file"
+          grep -q '^ssh_restore_socket_mode()' "$file"
+          grep -q '^  ssh_switch_to_service_mode$' "$file"
+          grep -q '^  ssh_restore_socket_mode$' "$file"
+
+          find install.sh bin lib modules tests -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+          bash tests/unit/test-core.sh
+          bash tests/unit/test-module-contract.sh
+          bash tests/security/test-hardening.sh
+
+          rm -f .github/workflows/patch-ssh-socket-mode.yml .patch-ssh-socket-mode
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'fix: manage OpenSSH socket activation transactionally'
+          git push origin HEAD:feat/transactional-architecture
