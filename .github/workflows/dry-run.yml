@@ -1,0 +1,14 @@
+name: Installer dry-run
+on:
+  push:
+    branches: ['feat/**', 'fix/**', 'main']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  dry-run:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run transactional installer without changes
+        run: sudo -E bash tests/integration/test-dry-run.sh
