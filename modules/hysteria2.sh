@@ -114,8 +114,10 @@ hysteria2_install() {
     [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] || \
       printf 'default %s %s\n' "$initial_token" "$(date -d '+365 days' +%Y-%m-%d)" > /etc/hysteria2/users.txt
   fi
-  [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] || \
-    install -m 640 -o root -g hextunnel-hysteria2 /etc/hysteria2/users.txt /etc/hysteria2/users.txt
+  if [[ "${HEXTUNNEL_DRY_RUN:-0}" != 1 ]]; then
+    chown root:hextunnel-hysteria2 /etc/hysteria2/users.txt
+    chmod 640 /etc/hysteria2/users.txt
+  fi
 
   write_file /etc/hysteria2/config.yaml 640 <<EOF
 listen: :36713

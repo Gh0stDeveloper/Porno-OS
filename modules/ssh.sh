@@ -157,7 +157,7 @@ EOF
 set -Eeuo pipefail
 for binary in /usr/sbin/sslh-select /usr/sbin/sslh-fork /usr/sbin/sslh; do
   [[ -x "$binary" ]] || continue
-  exec "$binary" -F /etc/sslh/hextunnel.cfg
+  exec "$binary" --config /etc/sslh/hextunnel.cfg
 done
 echo "No se encontró un binario SSLH compatible." >&2
 exit 127
