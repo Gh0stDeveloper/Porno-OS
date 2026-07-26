@@ -19,7 +19,7 @@ hextunnel install <modulo...>
 hextunnel uninstall <modulo|--all>
 hextunnel account <comando...>
 hextunnel update <comando...>
-hextunnel rollback [id]
+hextunnel rollback [id] [--force]
 hextunnel legacy-menu
 EOF
 }
@@ -169,6 +169,29 @@ doctor() {
   return "$status"
 }
 
+rollback_command() {
+  local id="" argument
+  HEXTUNNEL_FORCE=0
+  while (($# > 0)); do
+    argument="$1"
+    case "$argument" in
+      --force) HEXTUNNEL_FORCE=1 ;;
+      --help|-h)
+        printf 'Uso: hextunnel rollback [id] [--force]\n'
+        return 0
+        ;;
+      --*) die "Opción de rollback desconocida: $argument" ;;
+      *)
+        [[ -z "$id" ]] || die "Solo puede indicarse una transacción para rollback."
+        id="$argument"
+        ;;
+    esac
+    shift
+  done
+  export HEXTUNNEL_FORCE
+  rollback_transaction "$id"
+}
+
 case "${1:-help}" in
   doctor)
     shift
@@ -208,7 +231,7 @@ case "${1:-help}" in
     ;;
   rollback)
     shift
-    rollback_transaction "${1:-}"
+    rollback_command "$@"
     ;;
   legacy-menu)
     [[ -x /usr/local/bin/menu ]] && exec /usr/local/bin/menu || die "El menú heredado no está instalado."
