@@ -154,7 +154,7 @@ Type=simple
 User=hextunnel-slipstream
 Group=hextunnel-slipstream
 WorkingDirectory=/etc/slipstream
-ExecStart=$install_dir/target/release/slipstream-server --dns-listen-port 5300 --target-address 127.0.0.1:1080 --domain $domain --cert /etc/slipstream/cert.pem --key /etc/slipstream/key.pem --reset-seed /etc/slipstream/reset-seed
+ExecStart=$install_dir/target/release/slipstream-server --dns-listen-host 127.0.0.1 --dns-listen-port 5300 --target-address 127.0.0.1:1080 --domain $domain --cert /etc/slipstream/cert.pem --key /etc/slipstream/key.pem --reset-seed /etc/slipstream/reset-seed
 Restart=on-failure
 RestartSec=5s
 LimitNOFILE=65535
@@ -243,6 +243,7 @@ slipstream_validate() {
   dnsdist -C /etc/dnsdist/dnsdist.conf --check-config >/dev/null 2>&1
   systemctl is-active --quiet slipstream
   systemctl is-active --quiet dnsdist
+  port_is_listening udp 5300 any
 }
 
 slipstream_doctor() {
