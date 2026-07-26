@@ -7,25 +7,34 @@ webmin_ports() {
 webmin_dependencies() { :; }
 
 webmin_install_repository() {
+  local key_url="${HEXTUNNEL_WEBMIN_KEY_URL:-https://download.webmin.com/developers-key.asc}"
+  local expected_key_id="${HEXTUNNEL_WEBMIN_KEY_ID:-2D223B918916F2A2}"
+  local keyring=/usr/share/keyrings/hextunnel-webmin-developers.gpg
+  local repo_file=/etc/apt/sources.list.d/hextunnel-webmin.list
+  local tmp key_ids
   run_cmd apt-get update
   run_cmd apt-get install -y ca-certificates curl gnupg perl
-  backup_paths /usr/share/keyrings/webmin.gpg /etc/apt/sources.list.d/webmin.list
+  backup_paths "$keyring" "$repo_file" /etc/apt/sources.list.d/webmin.list /usr/share/keyrings/webmin.gpg
   if [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]]; then
-    log_dry "instalar clave y repositorio APT firmado de Webmin"
+    log_dry "instalar clave Webmin Developers y repositorio APT firmado"
     return 0
   fi
-  local tmp
-  tmp="$(mktemp /tmp/webmin-key.XXXXXX)"
-  curl -fL --retry 3 -o "$tmp" https://download.webmin.com/jcameron-key.asc
-  gpg --batch --yes --dearmor -o /usr/share/keyrings/webmin.gpg "$tmp"
-  chmod 644 /usr/share/keyrings/webmin.gpg
+  tmp="$(mktemp /tmp/webmin-developers-key.XXXXXX)"
+  curl -fL --retry 3 --connect-timeout 10 -o "$tmp" "$key_url"
+  key_ids="$(gpg --batch --show-keys --with-colons "$tmp" 2>/dev/null | awk -F: '$1=="pub" || $1=="sub" {print toupper($5)}' || true)"
+  grep -Fqx "${expected_key_id^^}" <<< "$key_ids" \
+    || { rm -f "$tmp"; die "La clave oficial de Webmin no contiene el identificador esperado $expected_key_id."; }
+  gpg --batch --yes --dearmor -o "$keyring" "$tmp"
+  chmod 644 "$keyring"
   rm -f "$tmp"
-  cat > /etc/apt/sources.list.d/webmin.list <<'EOF'
-deb [signed-by=/usr/share/keyrings/webmin.gpg] https://download.webmin.com/download/newkey/repository stable contrib
+  rm -f /etc/apt/sources.list.d/webmin.list /usr/share/keyrings/webmin.gpg
+  cat > "$repo_file" <<EOF
+deb [signed-by=$keyring] https://download.webmin.com/download/newkey/repository stable contrib
 EOF
-  chmod 644 /etc/apt/sources.list.d/webmin.list
+  chmod 644 "$repo_file"
+  apt-get clean
   apt-get update
-  apt-get install -y webmin
+  apt-get install -y --install-recommends webmin
 }
 
 webmin_set_config_value() {
@@ -63,11 +72,13 @@ webmin_install() {
 }
 
 webmin_uninstall() {
+  local keyring=/usr/share/keyrings/hextunnel-webmin-developers.gpg
+  local repo_file=/etc/apt/sources.list.d/hextunnel-webmin.list
   safe_stop_disable_service webmin
-  backup_paths /etc/webmin /etc/apt/sources.list.d/webmin.list /usr/share/keyrings/webmin.gpg
+  backup_paths /etc/webmin "$repo_file" "$keyring" /etc/apt/sources.list.d/webmin.list /usr/share/keyrings/webmin.gpg
   run_cmd apt-get purge -y webmin
   run_cmd rm -rf /etc/webmin
-  run_cmd rm -f /etc/apt/sources.list.d/webmin.list /usr/share/keyrings/webmin.gpg
+  run_cmd rm -f "$repo_file" "$keyring" /etc/apt/sources.list.d/webmin.list /usr/share/keyrings/webmin.gpg
   firewall_close_port tcp "${HEXTUNNEL_WEBMIN_PORT:-10000}"
 }
 
@@ -86,7 +97,7 @@ webmin_validate() {
 webmin_doctor() {
   local failed=0 port="${HEXTUNNEL_WEBMIN_PORT:-10000}" tls=disabled bind=""
   systemctl is-active --quiet webmin || failed=1
-  grep -q '^ssl=1$' /etc/webmin/miniserv.conf 2>/dev/null && tls=enabled || failed=1
+  if grep -q '^ssl=1$' /etc/webmin/miniserv.conf 2>/dev/null; then tls=enabled; else failed=1; fi
   bind="$(awk -F= '$1=="bind"{print $2}' /etc/webmin/miniserv.conf 2>/dev/null | tail -n1)"
   printf 'service=%s tls=%s bind=%s port=' "$(systemctl is-active webmin 2>/dev/null || true)" "$tls" "$bind"
   if port_is_listening tcp "$port" any; then printf open; else printf closed; failed=1; fi
