@@ -64,4 +64,37 @@ mkdir -p "$HEXTUNNEL_STATE/system-users"
 printf 'created_at=%s\ngroup_created=0\n' "$(date -Is)" > "$HEXTUNNEL_STATE/system-users/test-service"
 remove_managed_system_user test-service
 
+stage empty-firewall-removal
+(
+  HEXTUNNEL_DRY_RUN=0
+  firewall_backend() { printf ufw; }
+  ufw() {
+    if [[ "${1:-}" == status ]]; then
+      printf 'Status: active\n'
+    fi
+    return 0
+  }
+  firewall_close_port tcp 443
+)
+(
+  HEXTUNNEL_DRY_RUN=0
+  firewall_backend() { printf nft; }
+  nft() { return 0; }
+  firewall_close_port udp 36713
+)
+
+stage transaction-commit-guard
+transaction_dir="$HEXTUNNEL_STATE/transactions/rolled-back-test"
+mkdir -p "$transaction_dir"
+printf '%s\n' ROLLED_BACK > "$transaction_dir/status"
+if (
+  HEXTUNNEL_DRY_RUN=0
+  HEXTUNNEL_TRANSACTION_DIR="$transaction_dir"
+  transaction_commit
+); then
+  printf 'rolled-back transaction was incorrectly committed\n' >&2
+  exit 1
+fi
+[[ "$(transaction_status "$transaction_dir")" == ROLLED_BACK ]]
+
 printf 'core tests: ok\n'
