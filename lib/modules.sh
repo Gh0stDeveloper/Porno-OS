@@ -7,6 +7,11 @@ declare -A HEXTUNNEL_MODULE_RESOLVED=()
 declare -A HEXTUNNEL_MODULE_RESOLVING=()
 HEXTUNNEL_RESOLVED_ORDER=()
 
+if [[ -r "$HEXTUNNEL_ROOT/lib/nat.sh" ]] && ! declare -F nat_is_present >/dev/null 2>&1; then
+  # shellcheck disable=SC1091
+  source "$HEXTUNNEL_ROOT/lib/nat.sh"
+fi
+
 if [[ -r "$HEXTUNNEL_ROOT/lib/ssh-mode.sh" ]]; then
   # shellcheck disable=SC1091
   source "$HEXTUNNEL_ROOT/lib/ssh-mode.sh"
