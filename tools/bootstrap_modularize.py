@@ -280,8 +280,6 @@ def split_modules(content: str, root: Path) -> list[Module]:
     while start < len(lines):
         end = choose_boundary(lines, start, candidates)
         chunk = "".join(lines[start:end])
-        if not chunk.endswith("\n"):
-            chunk += "\n"
         base_slug = module_slug(chunk, index)
         occurrence = used_names.get(base_slug, 0)
         used_names[base_slug] = occurrence + 1
