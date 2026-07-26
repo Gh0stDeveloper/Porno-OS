@@ -83,6 +83,24 @@ if (nat_validate_values 50000 20000 5667 ""); then
 fi
 unset HEXTUNNEL_HYSTERIA1_NAT_START HEXTUNNEL_HYSTERIA1_NAT_END HEXTUNNEL_HYSTERIA1_PORT HEXTUNNEL_HYSTERIA1_NAT_EXEMPT
 
+stage nat-status-matching
+(
+  HEXTUNNEL_DRY_RUN=0
+  firewall_backend() { printf iptables; }
+  iptables-save() { printf '%s\n' '-A PREROUTING -p udp -m comment --comment "hextunnel-nat:hysteria1" -j DNAT'; }
+  nat_is_present hysteria1
+  if nat_is_present zivpn; then
+    printf 'absent NAT profile was reported as present\n' >&2
+    exit 1
+  fi
+)
+(
+  HEXTUNNEL_DRY_RUN=0
+  firewall_backend() { printf nft; }
+  nft() { printf '%s\n' 'udp dport 21000-22000 dnat to :36712 comment "hextunnel-nat:hysteria1" # handle 8'; }
+  nat_is_present hysteria1
+)
+
 stage secret-generation
 secret="$(random_secret 32)"
 [[ ${#secret} -eq 32 && "$secret" =~ ^[a-f0-9]+$ ]]
