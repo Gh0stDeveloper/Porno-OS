@@ -73,12 +73,13 @@ hysteria2_validate_config() {
   chown hextunnel-hysteria2:hextunnel-hysteria2 "$work" "$work/config.yaml"
   chmod 700 "$work"
   chmod 600 "$work/config.yaml"
-  set +e
-  timeout --signal=TERM 2s runuser -u hextunnel-hysteria2 -- \
+  if timeout --signal=TERM 2s runuser -u hextunnel-hysteria2 -- \
     /usr/local/bin/hysteria2 server --config "$work/config.yaml" \
-    >"$work/output.log" 2>&1
-  result=$?
-  set -e
+    >"$work/output.log" 2>&1; then
+    result=0
+  else
+    result=$?
+  fi
   [[ "$result" -eq 124 || "$result" -eq 143 ]] || {
     sanitize_text < "$work/output.log" >&2
     die "La configuración Hysteria 2 no pudo iniciar en el puerto temporal."
