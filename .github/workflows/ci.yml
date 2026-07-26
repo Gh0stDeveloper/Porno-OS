@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - 'contrib/**'
+      - 'fix/**'
+      - 'feat/**'
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate modular installer
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Generate modular source when missing
+        if: hashFiles('src/manifest.txt') == ''
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p .ci
+          if ! python3 tools/preprocess_install.py --root . 2>&1 | tee .ci/migration-error.txt; then
+            exit 1
+          fi
+          if ! python3 tools/bootstrap_modularize.py --root . 2>&1 | tee -a .ci/migration-error.txt; then
+            exit 1
+          fi
+          rm -f .ci/migration-error.txt
+
+      - name: Harden generated TLS source
+        if: hashFiles('src/manifest.txt') != ''
+        run: python3 tools/harden_generated_source.py --root .
+
+      - name: Publish migration diagnostics
+        if: failure() && hashFiles('.ci/migration-error.txt') != '' && github.actor != 'github-actions[bot]'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -f .ci/migration-error.txt
+          git commit -m 'ci: capture modular migration diagnostic'
+          git push origin HEAD:${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
+
+      - name: Verify generated installer
+        run: python3 tools/build.py --check
+
+      - name: Validate Bash syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n install.sh
+          while IFS= read -r module; do
+            [[ -z "$module" ]] && continue
+            bash -n "$module"
+          done < src/manifest.txt
+
+      - name: Run migration tests
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Scan tracked files for secrets
+        run: python3 tools/secret_scan.py
+
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: Run ShellCheck at error severity
+        shell: bash
+        run: |
+          set -euo pipefail
+          shellcheck --severity=error install.sh
+          while IFS= read -r module; do
+            [[ -z "$module" ]] && continue
+            shellcheck --severity=error -s bash "$module"
+          done < src/manifest.txt
+
+      - name: Publish generated modular source
+        if: success() && github.actor != 'github-actions[bot]'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -f .modularize-trigger .github/workflows/generate-modular.yml .ci/migration-error.txt
+          if git diff --quiet && git diff --cached --quiet && [[ -z "$(git ls-files --others --exclude-standard)" ]]; then
+            echo 'No generated changes to publish.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'refactor: regenerate hardened modular installer'
+          git push origin HEAD:${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}

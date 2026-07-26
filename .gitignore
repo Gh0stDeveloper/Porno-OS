@@ -1,0 +1,18 @@
+# Local secrets and runtime configuration
+config/secrets.env
+config/*.local.env
+*.secrets.env
+.migration-backup/
+
+# Generated/runtime files
+*.log
+*.pid
+*.tmp
+__pycache__/
+.pytest_cache/
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
