@@ -73,12 +73,18 @@ stage configurable-nat-ranges
 HEXTUNNEL_HYSTERIA1_NAT_START=21000
 HEXTUNNEL_HYSTERIA1_NAT_END=22000
 HEXTUNNEL_HYSTERIA1_PORT=36712
-HEXTUNNEL_HYSTERIA1_NAT_EXEMPT=36713
+HEXTUNNEL_HYSTERIA1_NAT_EXEMPT=36713,36717
 read -r nat_start nat_end nat_target nat_exempt < <(nat_profile_values hysteria1)
-[[ "$nat_start $nat_end $nat_target $nat_exempt" == '21000 22000 36712 36713' ]]
+[[ "$nat_start $nat_end $nat_target $nat_exempt" == '21000 22000 36712 36713,36717' ]]
 nat_validate_values "$nat_start" "$nat_end" "$nat_target" "$nat_exempt"
+mapfile -t exemptions < <(nat_exemption_ports "$nat_exempt")
+[[ "${exemptions[*]}" == '36713 36717' ]]
 if (nat_validate_values 50000 20000 5667 ""); then
   printf 'invalid NAT range was accepted\n' >&2
+  exit 1
+fi
+if (nat_validate_values 20000 50000 36712 '36713,bad'); then
+  printf 'invalid NAT exemption was accepted\n' >&2
   exit 1
 fi
 unset HEXTUNNEL_HYSTERIA1_NAT_START HEXTUNNEL_HYSTERIA1_NAT_END HEXTUNNEL_HYSTERIA1_PORT HEXTUNNEL_HYSTERIA1_NAT_EXEMPT
