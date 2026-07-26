@@ -18,7 +18,7 @@ index_of() {
 }
 
 stage source-libraries
-for file in common logging backup rollback systemd firewall secrets validation modules; do
+for file in common logging backup rollback systemd firewall nat secrets validation modules; do
   # shellcheck disable=SC1090
   source "$ROOT/lib/$file.sh"
 done
@@ -67,9 +67,7 @@ unset HEXTUNNEL_SLIPSTREAM_DNS_ADDRESS || true
 HEXTUNNEL_SLIPSTREAM_DNS_ADDRESS=127.0.0.1
 [[ -z "$(slipstream_ports)" ]]
 unset HEXTUNNEL_SLOWDNS_LISTEN_PORT HEXTUNNEL_SLOWDNS_LISTEN_ADDRESS
-aunset=0
-unset HEXTUNNEL_SLIPSTREAM_DNS_PORT HEXTUNNEL_SLIPSTREAM_DNS_ADDRESS || aunset=$?
-((aunset == 0))
+unset HEXTUNNEL_SLIPSTREAM_DNS_PORT HEXTUNNEL_SLIPSTREAM_DNS_ADDRESS
 
 stage configurable-nat-ranges
 HEXTUNNEL_HYSTERIA1_NAT_START=21000
