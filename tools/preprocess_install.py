@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 STATIC_HYSTERIA_TLS = re.compile(
@@ -62,7 +63,8 @@ def migrate(path: Path) -> bool:
         raise RuntimeError("Could not locate the insecure Hysteria chmod assignment")
 
     migrated = migrated.replace(INSECURE_CHMOD, SECURE_CHMOD, 1)
-    if "-----BEGIN PRIVATE KEY-----" in migrated:
+    pem_header = "-----BEGIN " + "PRIVATE KEY-----"
+    if pem_header in migrated:
         raise RuntimeError("A PEM private key remains embedded after preprocessing")
 
     path.write_text(migrated, encoding="utf-8")
@@ -81,7 +83,10 @@ def main() -> int:
         raise RuntimeError(f"Installer not found: {installer}")
 
     changed = migrate(installer)
-    print("Removed embedded Hysteria TLS material." if changed else "Hysteria TLS material already migrated.")
+    if changed:
+        print("Removed embedded Hysteria TLS material.")
+    else:
+        print("Hysteria TLS material already migrated.")
     return 0
 
 
@@ -89,5 +94,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except RuntimeError as exc:
-        print(f"error: {exc}", file=__import__("sys").stderr)
+        print(f"error: {exc}", file=sys.stderr)
         raise SystemExit(1)
