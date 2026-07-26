@@ -26,7 +26,7 @@ zivpn_install_binary() {
   }
   tmp="$(mktemp /tmp/hextunnel-zivpn.XXXXXX)"
   run_cmd curl -fL --retry 3 -o "$tmp" "$url"
-  [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] && return 0
+  [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] && { rm -f "$tmp"; return 0; }
   actual="$(sha256sum "$tmp" | awk '{print tolower($1)}')"
   expected="${HEXTUNNEL_ZIVPN_SHA256:-}"
   [[ -z "$expected" && "$digest" == sha256:* ]] && expected="${digest#sha256:}"
@@ -43,6 +43,17 @@ zivpn_install_binary() {
   rm -f "$tmp"
 }
 
+zivpn_rebuild_config_passwords() {
+  local config="${1:-/etc/zivpn/config.json}" users="${2:-/etc/zivpn/users.txt}" tmp passwords
+  [[ -s "$config" && -f "$users" ]] || return 0
+  tmp="$(mktemp /tmp/hextunnel-zivpn-config.XXXXXX)"
+  passwords="$(awk 'NF >= 3 {print $2}' "$users" | jq -R . | jq -s .)"
+  jq --argjson passwords "$passwords" '.auth.config=$passwords' "$config" > "$tmp"
+  jq empty "$tmp"
+  install -m 600 "$tmp" "$config"
+  rm -f "$tmp"
+}
+
 zivpn_install_expiry() {
   write_file /usr/local/sbin/hextunnel-zivpn-expire 700 <<'EOF'
 #!/usr/bin/env bash
@@ -55,17 +66,17 @@ exec 9>/run/lock/hextunnel-zivpn.lock
 flock -w 30 9
 work="$(mktemp -d /tmp/hextunnel-zivpn-expire.XXXXXX)"
 trap 'rm -rf "$work"' EXIT
-mapfile -t expired < <(awk -v today="$(date +%Y-%m-%d)" '$2 < today {print $1}' "$users")
-((${#expired[@]} > 0)) || exit 0
-expired_json="$(printf '%s\n' "${expired[@]}" | jq -R . | jq -s .)"
-jq --argjson expired "$expired_json" '.auth.config |= map(select(($expired | index(.)) == null))' "$config" > "$work/config.json"
+awk -v today="$(date +%Y-%m-%d)" 'NF >= 3 && $3 >= today {print}' "$users" > "$work/users.txt"
+passwords="$(awk 'NF >= 3 {print $2}' "$work/users.txt" | jq -R . | jq -s .)"
+jq --argjson passwords "$passwords" '.auth.config=$passwords' "$config" > "$work/config.json"
 jq empty "$work/config.json"
 cp -p "$config" "$work/config.backup"
+cp -p "$users" "$work/users.backup"
 install -m 600 "$work/config.json" "$config"
-awk -v today="$(date +%Y-%m-%d)" '$2 >= today' "$users" > "$work/users.txt"
 install -m 600 "$work/users.txt" "$users"
 if ! systemctl restart zivpn; then
   install -m 600 "$work/config.backup" "$config"
+  install -m 600 "$work/users.backup" "$users"
   systemctl restart zivpn || true
   exit 1
 fi
@@ -101,9 +112,12 @@ zivpn_install() {
 }
 EOF
   if [[ ! -s /etc/zivpn/users.txt ]]; then
-    [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] || printf '%s %s\n' "$password" "$(date -d '+365 days' +%Y-%m-%d)" > /etc/zivpn/users.txt
+    [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] || printf 'default %s %s\n' "$password" "$(date -d '+365 days' +%Y-%m-%d)" > /etc/zivpn/users.txt
   fi
-  [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] || chmod 600 /etc/zivpn/users.txt
+  [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] || {
+    chmod 600 /etc/zivpn/users.txt
+    zivpn_rebuild_config_passwords
+  }
   install_systemd_unit zivpn.service 644 <<'EOF'
 [Unit]
 Description=Hex Tunnel ZiVPN server
@@ -144,8 +158,9 @@ zivpn_uninstall() {
 
 zivpn_validate() {
   [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] && return 0
-  [[ -x /usr/local/bin/zivpn && -s /etc/zivpn/config.json && -s /etc/zivpn/zivpn.key ]]
+  [[ -x /usr/local/bin/zivpn && -s /etc/zivpn/config.json && -s /etc/zivpn/zivpn.key && -s /etc/zivpn/users.txt ]]
   jq empty /etc/zivpn/config.json
+  awk 'NF != 3 {exit 1}' /etc/zivpn/users.txt
 }
 
 zivpn_doctor() {
