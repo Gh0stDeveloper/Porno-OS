@@ -102,11 +102,11 @@ jobs:
           set -Eeuo pipefail
           sudo hextunnel-update check --channel stable > /tmp/update-check.json
           jq -e '.components.framework.version == "signed-update-v2"' /tmp/update-check.json
-          before="$(readlink -f /var/lib/hextunnel/last-successful 2>/dev/null || true)"
+          before="$(sudo readlink -f /var/lib/hextunnel/last-successful 2>/dev/null || true)"
           sudo hextunnel-update apply framework --channel stable \
             2>&1 | tee /tmp/update-apply.log
           sudo test -s /opt/hextunnel/SIGNED-UPDATE-VERSION
-          transaction="$(readlink -f /var/lib/hextunnel/last-successful)"
+          transaction="$(sudo readlink -f /var/lib/hextunnel/last-successful)"
           [[ "$transaction" != "$before" ]]
           [[ "$(sudo cat "$transaction/status")" == COMMITTED ]]
           sudo hextunnel rollback "$(basename "$transaction")" \
@@ -147,7 +147,7 @@ jobs:
             exit 1
           fi
           grep -q 'SHA-256 del componente framework no coincide' /tmp/bad-digest.out
-          latest="$(find /var/lib/hextunnel/transactions -mindepth 1 -maxdepth 1 -type d -name '*update-framework-bad-digest*' | sort | tail -n1)"
+          latest="$(sudo find /var/lib/hextunnel/transactions -mindepth 1 -maxdepth 1 -type d -name '*update-framework-bad-digest*' | sort | tail -n1)"
           [[ -n "$latest" ]]
           [[ "$(sudo cat "$latest/status")" == ROLLED_BACK ]]
           sudo test ! -e /opt/hextunnel/SIGNED-UPDATE-VERSION
