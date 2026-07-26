@@ -24,19 +24,25 @@ slowdns_download_binary() {
 }
 
 slowdns_generate_keys() {
-  ensure_dir 700 /etc/slowdns
-  if [[ -s /etc/slowdns/server.key && -s /etc/slowdns/server.pub ]]; then return 0; fi
-  backup_paths /etc/slowdns/server.key /etc/slowdns/server.pub
-  [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] && return 0
-  if /usr/local/bin/sldns-server -gen-key -privkey-file /etc/slowdns/server.key /etc/slowdns/server.pub >/dev/null 2>&1; then
-    :
-  elif /usr/local/bin/sldns-server --gen-key --privkey-file /etc/slowdns/server.key --pubkey-file /etc/slowdns/server.pub >/dev/null 2>&1; then
-    :
-  else
-    die "El binario SlowDNS no pudo generar un par de claves."
+  ensure_dir 750 /etc/slowdns
+  if [[ ! -s /etc/slowdns/server.key || ! -s /etc/slowdns/server.pub ]]; then
+    backup_paths /etc/slowdns/server.key /etc/slowdns/server.pub
+    if [[ "${HEXTUNNEL_DRY_RUN:-0}" != 1 ]]; then
+      if /usr/local/bin/sldns-server -gen-key -privkey-file /etc/slowdns/server.key /etc/slowdns/server.pub >/dev/null 2>&1; then
+        :
+      elif /usr/local/bin/sldns-server --gen-key --privkey-file /etc/slowdns/server.key --pubkey-file /etc/slowdns/server.pub >/dev/null 2>&1; then
+        :
+      else
+        die "El binario SlowDNS no pudo generar un par de claves."
+      fi
+    fi
   fi
-  chmod 600 /etc/slowdns/server.key
-  chmod 644 /etc/slowdns/server.pub
+  if [[ "${HEXTUNNEL_DRY_RUN:-0}" != 1 ]]; then
+    chown root:hextunnel-slowdns /etc/slowdns /etc/slowdns/server.key /etc/slowdns/server.pub
+    chmod 750 /etc/slowdns
+    chmod 640 /etc/slowdns/server.key
+    chmod 644 /etc/slowdns/server.pub
+  fi
 }
 
 slowdns_write_environment() {
@@ -61,6 +67,7 @@ EOF
 slowdns_install() {
   run_cmd apt-get update
   run_cmd apt-get install -y curl ca-certificates
+  ensure_system_user hextunnel-slowdns
   slowdns_download_binary
   slowdns_generate_keys
   slowdns_write_environment
@@ -76,12 +83,15 @@ EnvironmentFile=/etc/default/hextunnel-slowdns
 ExecStart=/usr/local/bin/sldns-server -udp ${SLOWDNS_LISTEN_ADDRESS}:${SLOWDNS_LISTEN_PORT} -privkey-file /etc/slowdns/server.key ${SLOWDNS_NS} ${SLOWDNS_TARGET_HOST}:${SLOWDNS_TARGET_PORT}
 Restart=on-failure
 RestartSec=3s
-User=nobody
-Group=nogroup
+User=hextunnel-slowdns
+Group=hextunnel-slowdns
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
 ReadOnlyPaths=/etc/slowdns /etc/default/hextunnel-slowdns
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 AmbientCapabilities=CAP_NET_BIND_SERVICE
@@ -89,7 +99,7 @@ AmbientCapabilities=CAP_NET_BIND_SERVICE
 [Install]
 WantedBy=multi-user.target
 EOF
-  safe_restart_service server-sldns "test -s /etc/slowdns/server.key && test -s /etc/slowdns/server.pub && test -s /etc/default/hextunnel-slowdns"
+  safe_restart_service server-sldns "test -r /etc/slowdns/server.key && test -s /etc/slowdns/server.pub && test -s /etc/default/hextunnel-slowdns"
 }
 
 slowdns_set_listener() {
@@ -109,25 +119,28 @@ slowdns_uninstall() {
   run_cmd rm -rf /etc/slowdns
   run_cmd rm -f /etc/default/hextunnel-slowdns /etc/systemd/system/server-sldns.service /usr/local/bin/sldns-server
   systemd_reload
+  remove_managed_system_user hextunnel-slowdns
   firewall_close_port udp 53
 }
 
 slowdns_validate() {
   [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] && return 0
   [[ -x /usr/local/bin/sldns-server && -s /etc/slowdns/server.key && -s /etc/slowdns/server.pub && -s /etc/default/hextunnel-slowdns ]]
+  sudo -u hextunnel-slowdns test -r /etc/slowdns/server.key
 }
 
 slowdns_doctor() {
-  local address="" port=53 failed=0
+  local address="" port=53 failed=0 scope=public
   if [[ -r /etc/default/hextunnel-slowdns ]]; then
     # shellcheck disable=SC1091
     source /etc/default/hextunnel-slowdns
     address="$SLOWDNS_LISTEN_ADDRESS"
     port="$SLOWDNS_LISTEN_PORT"
   fi
+  [[ "$address" == 127.* ]] && scope=any
   printf 'service=%s listener=%s:%s:' "$(systemctl is-active server-sldns 2>/dev/null || true)" "${address:-unknown}" "$port"
   systemctl is-active --quiet server-sldns || failed=1
-  if port_is_listening udp "$port" "$([[ "$address" == 127.* ]] && printf any || printf public)"; then printf open; else printf closed; failed=1; fi
+  if port_is_listening udp "$port" "$scope"; then printf open; else printf closed; failed=1; fi
   printf ' public-key=%s\n' "$(head -c 16 /etc/slowdns/server.pub 2>/dev/null || printf missing)"
   [[ -s /etc/slowdns/server.pub ]] || failed=1
   return "$failed"
