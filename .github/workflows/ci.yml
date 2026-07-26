@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - 'contrib/**'
+      - 'fix/**'
+      - 'feat/**'
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate modular installer
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify generated installer
+        run: python3 tools/build.py --check
+
+      - name: Validate Bash syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n install.sh
+          while IFS= read -r module; do
+            [[ -z "$module" ]] && continue
+            bash -n "$module"
+          done < src/manifest.txt
+
+      - name: Run migration tests
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Scan tracked files for secrets
+        run: python3 tools/secret_scan.py
+
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: Run ShellCheck at error severity
+        shell: bash
+        run: |
+          set -euo pipefail
+          shellcheck --severity=error install.sh
+          while IFS= read -r module; do
+            [[ -z "$module" ]] && continue
+            shellcheck --severity=error -s bash "$module"
+          done < src/manifest.txt
