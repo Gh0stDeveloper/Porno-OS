@@ -55,6 +55,36 @@ slipstream_index="$(index_of slipstream "${requested[@]}")"
 ((ssh_index < xray_index && xray_index < hysteria_index))
 ((ssh_index < slowdns_index && slowdns_index < slipstream_index))
 
+stage configurable-dns-listeners
+HEXTUNNEL_SLOWDNS_LISTEN_PORT=5353
+unset HEXTUNNEL_SLOWDNS_LISTEN_ADDRESS || true
+[[ "$(slowdns_ports)" == 'udp 5353 0.0.0.0/0 public' ]]
+HEXTUNNEL_SLOWDNS_LISTEN_ADDRESS=127.0.0.1
+[[ -z "$(slowdns_ports)" ]]
+HEXTUNNEL_SLIPSTREAM_DNS_PORT=5354
+unset HEXTUNNEL_SLIPSTREAM_DNS_ADDRESS || true
+[[ "$(slipstream_ports)" == 'udp 5354 0.0.0.0/0 public' ]]
+HEXTUNNEL_SLIPSTREAM_DNS_ADDRESS=127.0.0.1
+[[ -z "$(slipstream_ports)" ]]
+unset HEXTUNNEL_SLOWDNS_LISTEN_PORT HEXTUNNEL_SLOWDNS_LISTEN_ADDRESS
+aunset=0
+unset HEXTUNNEL_SLIPSTREAM_DNS_PORT HEXTUNNEL_SLIPSTREAM_DNS_ADDRESS || aunset=$?
+((aunset == 0))
+
+stage configurable-nat-ranges
+HEXTUNNEL_HYSTERIA1_NAT_START=21000
+HEXTUNNEL_HYSTERIA1_NAT_END=22000
+HEXTUNNEL_HYSTERIA1_PORT=36712
+HEXTUNNEL_HYSTERIA1_NAT_EXEMPT=36713
+read -r nat_start nat_end nat_target nat_exempt < <(nat_profile_values hysteria1)
+[[ "$nat_start $nat_end $nat_target $nat_exempt" == '21000 22000 36712 36713' ]]
+nat_validate_values "$nat_start" "$nat_end" "$nat_target" "$nat_exempt"
+if (nat_validate_values 50000 20000 5667 ""); then
+  printf 'invalid NAT range was accepted\n' >&2
+  exit 1
+fi
+unset HEXTUNNEL_HYSTERIA1_NAT_START HEXTUNNEL_HYSTERIA1_NAT_END HEXTUNNEL_HYSTERIA1_PORT HEXTUNNEL_HYSTERIA1_NAT_EXEMPT
+
 stage secret-generation
 secret="$(random_secret 32)"
 [[ ${#secret} -eq 32 && "$secret" =~ ^[a-f0-9]+$ ]]
