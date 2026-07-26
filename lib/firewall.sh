@@ -1,13 +1,32 @@
 #!/usr/bin/env bash
 
 firewall_backend() {
-  if command_exists ufw && ufw status >/dev/null 2>&1; then
+  if command_exists ufw && ufw status 2>/dev/null | grep -qi '^Status: active'; then
     printf ufw
   elif command_exists nft; then
     printf nft
-  else
+  elif command_exists iptables; then
     printf iptables
+  else
+    return 1
   fi
+}
+
+firewall_prepare_backend() {
+  local backend
+  if backend="$(firewall_backend 2>/dev/null)"; then
+    log_debug "Backend de firewall disponible: $backend"
+    return 0
+  fi
+  if [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]]; then
+    log_dry "apt-get update && apt-get install -y nftables"
+    return 0
+  fi
+  command_exists apt-get || die "No existe un backend de firewall ni un gestor APT para instalar nftables."
+  log_info "No se encontró UFW activo, nftables ni iptables; instalando nftables antes de la transacción."
+  apt-get update
+  apt-get install -y nftables
+  command_exists nft || die "nftables no quedó disponible después de instalarlo."
 }
 
 firewall_rule_tag() {
@@ -17,7 +36,7 @@ firewall_rule_tag() {
 firewall_snapshot() {
   [[ -n "${HEXTUNNEL_TRANSACTION_DIR:-}" && "${HEXTUNNEL_DRY_RUN:-0}" != 1 ]] || return 0
   local backend
-  backend="$(firewall_backend)"
+  backend="$(firewall_backend)" || die "No existe un backend de firewall preparado."
   printf '%s\n' "$backend" > "$HEXTUNNEL_TRANSACTION_DIR/firewall.backend"
   case "$backend" in
     ufw)
@@ -62,7 +81,7 @@ firewall_restore() {
 
 firewall_open_port() {
   local protocol="$1" port="$2" source="${3:-0.0.0.0/0}" backend tag family
-  backend="$(firewall_backend)"
+  backend="$(firewall_backend)" || die "No existe un backend de firewall preparado."
   tag="$(firewall_rule_tag "$protocol" "$port")"
   log_info "Firewall: permitir $protocol/$port desde $source mediante $backend"
   [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] && return 0
@@ -128,7 +147,7 @@ firewall_nft_rule_handles() {
 firewall_close_port() {
   local protocol="$1" port="$2" backend tag number handle
   local numbers=() handles=()
-  backend="$(firewall_backend)"
+  backend="$(firewall_backend)" || return 0
   tag="$(firewall_rule_tag "$protocol" "$port")"
 
   if [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]]; then
