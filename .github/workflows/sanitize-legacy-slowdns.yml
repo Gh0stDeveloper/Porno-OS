@@ -1,0 +1,74 @@
+name: Sanitize legacy SlowDNS
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: write
+jobs:
+  migrate:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'feat/transactional-architecture'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/transactional-architecture
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Replace static SlowDNS key material
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          input=legacy/install-all.sh
+          output="$(mktemp)"
+          awk '
+            /^Serverkey=/ { next }
+            /^Serverpub=/ { next }
+            $0 == "# SLOWDNS" {
+              print "# SLOWDNS"
+              print "rm -rf /etc/slowdns"
+              print "install -d -m 700 /etc/slowdns"
+              print "wget -q -O /etc/slowdns/sldns-server \"https://raw.githubusercontent.com/fisabiliyusri/SLDNS/main/slowdns/sldns-server\""
+              print "chmod 755 /etc/slowdns/sldns-server"
+              print "if [[ -n \"${HEXTUNNEL_SLOWDNS_SHA256:-}\" ]]; then"
+              print "  printf \"%s  %s\\n\" \"$HEXTUNNEL_SLOWDNS_SHA256\" /etc/slowdns/sldns-server | sha256sum -c - || exit 1"
+              print "else"
+              print "  echo \"ADVERTENCIA: SlowDNS heredado se descargó sin checksum configurado.\""
+              print "fi"
+              print "if /etc/slowdns/sldns-server -gen-key -privkey-file /etc/slowdns/server.key /etc/slowdns/server.pub >/dev/null 2>&1; then"
+              print "  :"
+              print "elif /etc/slowdns/sldns-server --gen-key --privkey-file /etc/slowdns/server.key --pubkey-file /etc/slowdns/server.pub >/dev/null 2>&1; then"
+              print "  :"
+              print "else"
+              print "  echo \"ERROR: SlowDNS no pudo generar un par de claves único.\" >&2"
+              print "  exit 1"
+              print "fi"
+              print "chmod 600 /etc/slowdns/server.key"
+              print "chmod 644 /etc/slowdns/server.pub"
+              replacing=1
+              next
+            }
+            replacing && /^iptables -C INPUT -p udp --dport 53 / {
+              replacing=0
+              print
+              next
+            }
+            replacing { next }
+            { print }
+          ' "$input" > "$output"
+          install -m 755 "$output" "$input"
+          rm -f "$output"
+          bash -n "$input"
+          ! grep -Eq '^Server(key|pub)=' "$input"
+          ! grep -Eq '[a-f0-9]{64}' "$input"
+          rm -f .github/workflows/sanitize-legacy-slowdns.yml
+      - name: Commit sanitized compatibility installer
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: generate unique SlowDNS keys in legacy mode'
+          git push origin HEAD:feat/transactional-architecture
