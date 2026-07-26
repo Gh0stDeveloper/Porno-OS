@@ -68,7 +68,6 @@ hysteria2_validate_config() {
   [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] && return 0
   local work result
   work="$(mktemp -d /tmp/hextunnel-hysteria2-check.XXXXXX)"
-  trap 'rm -rf "$work"' RETURN
   sed -E 's|^listen:.*|listen: 127.0.0.1:0|' /etc/hysteria2/config.yaml > "$work/config.yaml"
   chown hextunnel-hysteria2:hextunnel-hysteria2 "$work" "$work/config.yaml"
   chmod 700 "$work"
@@ -80,10 +79,12 @@ hysteria2_validate_config() {
   else
     result=$?
   fi
-  [[ "$result" -eq 124 || "$result" -eq 143 ]] || {
+  if [[ "$result" -ne 124 && "$result" -ne 143 ]]; then
     sanitize_text < "$work/output.log" >&2
+    rm -rf "$work"
     die "La configuración Hysteria 2 no pudo iniciar en el puerto temporal."
-  }
+  fi
+  rm -rf "$work"
 }
 
 hysteria2_install() {
