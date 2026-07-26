@@ -52,7 +52,8 @@ jobs:
         run: |
           set -Eeuo pipefail
           sudo -E bash ./install.sh install ssh xray hysteria2 \
-            --non-interactive --no-reboot --force
+            --non-interactive --no-reboot --force \
+            2>&1 | tee /tmp/hextunnel-install.log
 
       - name: Validate services and configurations
         shell: bash
@@ -60,13 +61,15 @@ jobs:
           set -Eeuo pipefail
           sudo systemctl is-active --quiet ssh
           sudo systemctl is-active --quiet stunnel4
-          sudo systemctl is-active --quiet sslh
+          sudo systemctl is-active --quiet hextunnel-sslh
+          ! sudo systemctl is-active --quiet sslh
           sudo systemctl is-active --quiet xray
           sudo systemctl is-active --quiet hextunnel-haproxy
           sudo systemctl is-active --quiet hysteria2
           sudo sshd -t
           sudo /usr/local/bin/xray run -test -config /etc/xray/config.json
           sudo haproxy -c -f /etc/hextunnel/haproxy-xray.cfg
+          sudo runuser -u sslh -- test -r /etc/hextunnel/sslh.cfg
           sudo runuser -u hextunnel-hysteria2 -- test -r /etc/hysteria2/server.key
 
       - name: Exercise account lifecycle
@@ -87,7 +90,7 @@ jobs:
           set -Eeuo pipefail
           sudo hextunnel doctor --report /tmp/hextunnel-doctor.txt
           sudo test -s /tmp/hextunnel-doctor.txt
-          ! sudo grep -Eq '-----BEGIN .*PRIVATE KEY-----|[0-9]{8,12}:[A-Za-z0-9_-]{20,}' /tmp/hextunnel-doctor.txt
+          ! sudo grep -Eq -- '-----BEGIN .*PRIVATE KEY-----|[0-9]{8,12}:[A-Za-z0-9_-]{20,}' /tmp/hextunnel-doctor.txt
 
       - name: Uninstall selected modules
         shell: bash
@@ -96,6 +99,7 @@ jobs:
           sudo hextunnel uninstall hysteria2 xray ssh
           test ! -e /etc/systemd/system/hysteria2.service
           test ! -e /etc/systemd/system/xray.service
+          test ! -e /etc/systemd/system/hextunnel-sslh.service
           test ! -e /etc/ssh/sshd_config.d/90-hextunnel.conf
           test ! -e /var/lib/hextunnel/modules/hysteria2
           test ! -e /var/lib/hextunnel/modules/xray
@@ -109,7 +113,7 @@ jobs:
           {
             echo '=== systemctl failed ==='
             sudo systemctl --failed --no-pager
-            for unit in ssh stunnel4 sslh fail2ban xray hextunnel-haproxy hysteria2; do
+            for unit in ssh stunnel4 sslh hextunnel-sslh fail2ban xray hextunnel-haproxy hysteria2; do
               echo
               echo "=== $unit ==="
               sudo systemctl status "$unit" --no-pager -l
@@ -118,6 +122,7 @@ jobs:
           } > /tmp/vm-integration.log 2>&1
           sudo chmod 644 /tmp/hextunnel-doctor.txt 2>/dev/null || true
           sudo chmod 644 /tmp/account-create.txt 2>/dev/null || true
+          sudo chmod 644 /tmp/hextunnel-install.log 2>/dev/null || true
 
       - name: Upload integration diagnostics
         if: always()
@@ -126,6 +131,7 @@ jobs:
           name: vm-integration-${{ matrix.runner }}-${{ github.run_id }}
           path: |
             /tmp/vm-integration.log
+            /tmp/hextunnel-install.log
             /tmp/hextunnel-doctor.txt
             /tmp/account-create.txt
           if-no-files-found: warn
