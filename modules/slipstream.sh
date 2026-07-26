@@ -60,6 +60,12 @@ slipstream_install_rust_toolchain() {
     || die "El toolchain Rust instalado no corresponde a $toolchain."
 }
 
+slipstream_reset_seed_valid() {
+  local seed="${1:-/etc/slipstream/reset-seed}"
+  [[ -f "$seed" ]] || return 1
+  grep -Eq '^[0-9a-f]{64}$' "$seed"
+}
+
 slipstream_install() {
   local domain="${HEXTUNNEL_SLIPSTREAM_DOMAIN:-}"
   local slowdns_ns="${HEXTUNNEL_SLOWDNS_NS:-}"
@@ -108,10 +114,12 @@ slipstream_install() {
       -keyout /etc/slipstream/key.pem -out /etc/slipstream/cert.pem \
       -subj "/CN=$common_name/O=HexTunnel"
   fi
-  if [[ ! -s /etc/slipstream/reset-seed ]]; then
-    [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] || openssl rand 32 > /etc/slipstream/reset-seed
+  if [[ "${HEXTUNNEL_DRY_RUN:-0}" != 1 ]] && ! slipstream_reset_seed_valid; then
+    backup_path /etc/slipstream/reset-seed
+    openssl rand -hex 32 > /etc/slipstream/reset-seed
   fi
   if [[ "${HEXTUNNEL_DRY_RUN:-0}" != 1 ]]; then
+    slipstream_reset_seed_valid || die "SlipStream requiere un reset seed hexadecimal de 64 caracteres."
     chown root:hextunnel-slipstream /etc/slipstream /etc/slipstream/cert.pem /etc/slipstream/key.pem /etc/slipstream/reset-seed
     chmod 750 /etc/slipstream
     chmod 644 /etc/slipstream/cert.pem
@@ -184,14 +192,23 @@ setLocal('$dns_address:$dns_port')
 setACL({'0.0.0.0/0', '::/0'})
 newServer({address='127.0.0.1:5301', name='slowdns', pool='slowdns'})
 newServer({address='127.0.0.1:5300', name='slipstream', pool='slipstream'})
-addAction(QNameSuffixRule('$slowdns_ns'), PoolAction('slowdns'))
-addAction(QNameSuffixRule('$domain'), PoolAction('slipstream'))
+slowdnsSuffixes = newSuffixMatchNode()
+slowdnsSuffixes:add(newDNSName('$slowdns_ns'))
+slipstreamSuffixes = newSuffixMatchNode()
+slipstreamSuffixes:add(newDNSName('$domain'))
+addAction(SuffixMatchNodeRule(slowdnsSuffixes), PoolAction('slowdns'))
+addAction(SuffixMatchNodeRule(slipstreamSuffixes), PoolAction('slipstream'))
 addAction(AllRule(), PoolAction('slowdns'))
 EOF
 
   safe_restart_service danted "danted -V -f /etc/danted.conf >/dev/null 2>&1 || test -s /etc/danted.conf"
-  safe_restart_service slipstream "test -x $install_dir/target/release/slipstream-server && runuser -u hextunnel-slipstream -- test -r /etc/slipstream/key.pem && openssl x509 -in /etc/slipstream/cert.pem -noout"
-  safe_restart_service dnsdist "dnsdist --check-config -C /etc/dnsdist/dnsdist.conf >/dev/null 2>&1 || dnsdist --check-config >/dev/null 2>&1"
+  safe_restart_service slipstream "test -x $install_dir/target/release/slipstream-server && runuser -u hextunnel-slipstream -- test -r /etc/slipstream/key.pem && grep -Eq '^[0-9a-f]{64}$' /etc/slipstream/reset-seed && openssl x509 -in /etc/slipstream/cert.pem -noout"
+  safe_restart_service dnsdist "dnsdist -C /etc/dnsdist/dnsdist.conf --check-config >/dev/null 2>&1"
+  if [[ "${HEXTUNNEL_DRY_RUN:-0}" != 1 ]]; then
+    sleep 1
+    systemctl is-active --quiet slipstream || die "SlipStream no permaneció activo después del reinicio."
+    systemctl is-active --quiet dnsdist || die "DNSdist no permaneció activo después del reinicio."
+  fi
 }
 
 slipstream_uninstall() {
@@ -222,20 +239,22 @@ slipstream_validate() {
   local install_dir="${HEXTUNNEL_SLIPSTREAM_DIR:-/opt/slipstream-rust}"
   [[ -x "$install_dir/target/release/slipstream-server" && -s /etc/dnsdist/dnsdist.conf && -s /etc/slipstream/key.pem && -s /etc/slipstream/slowdns-listener.env ]]
   runuser -u hextunnel-slipstream -- test -r /etc/slipstream/key.pem
-  dnsdist --check-config -C /etc/dnsdist/dnsdist.conf >/dev/null 2>&1 || dnsdist --check-config >/dev/null 2>&1
+  slipstream_reset_seed_valid
+  dnsdist -C /etc/dnsdist/dnsdist.conf --check-config >/dev/null 2>&1
   systemctl is-active --quiet slipstream
   systemctl is-active --quiet dnsdist
 }
 
 slipstream_doctor() {
-  local failed=0 dns_address="${HEXTUNNEL_SLIPSTREAM_DNS_ADDRESS:-$(primary_ipv4)}" dns_port="${HEXTUNNEL_SLIPSTREAM_DNS_PORT:-53}" scope=public
+  local failed=0 dns_address="${HEXTUNNEL_SLIPSTREAM_DNS_ADDRESS:-$(primary_ipv4)}" dns_port="${HEXTUNNEL_SLIPSTREAM_DNS_PORT:-53}" scope=public seed=invalid
   [[ "$dns_address" == 127.* || "$dns_address" == ::1 ]] && scope=any
+  slipstream_reset_seed_valid && seed=valid || failed=1
   printf 'slipstream=%s dnsdist=%s dns=%s:%s:' "$(systemctl is-active slipstream 2>/dev/null || true)" "$(systemctl is-active dnsdist 2>/dev/null || true)" "$dns_address" "$dns_port"
   systemctl is-active --quiet slipstream || failed=1
   systemctl is-active --quiet dnsdist || failed=1
   if port_is_listening udp "$dns_port" "$scope"; then printf open; else printf closed; failed=1; fi
   printf ' udp5300='
   if port_is_listening udp 5300 any; then printf open; else printf closed; failed=1; fi
-  printf '\n'
+  printf ' seed=%s\n' "$seed"
   return "$failed"
 }
