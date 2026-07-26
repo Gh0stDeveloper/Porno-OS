@@ -8,6 +8,7 @@ for file in common logging backup rollback systemd firewall nat; do
 done
 HEXTUNNEL_DRY_RUN="${HEXTUNNEL_DRY_RUN:-0}"
 init_logging
+load_runtime_config
 case "${1:-}" in
   apply) [[ -n "${2:-}" ]] || die "Indica el perfil NAT."; nat_apply "$2" ;;
   remove) [[ -n "${2:-}" ]] || die "Indica el perfil NAT."; nat_remove "$2" ;;
