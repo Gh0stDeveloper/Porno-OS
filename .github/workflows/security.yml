@@ -1,0 +1,16 @@
+name: Current tree secret scan
+on:
+  push:
+    branches: ['feat/**', 'fix/**', 'main']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan current tree without inherited Git history
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.24.2 \
+            detect --no-git --source=/repo --redact --exit-code=1

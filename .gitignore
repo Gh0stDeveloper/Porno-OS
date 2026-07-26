@@ -1,0 +1,7 @@
+config/secrets.env
+config/hextunnel.env
+*.log
+*.bak
+*.tmp
+reports/
+.migration-backup/

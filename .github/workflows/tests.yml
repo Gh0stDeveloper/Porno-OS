@@ -1,0 +1,20 @@
+name: Bash tests
+on:
+  push:
+    branches: ['feat/**', 'fix/**', 'main']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Bash syntax
+        run: bash tests/integration/test-syntax.sh
+      - name: Test core
+        run: bash tests/unit/test-core.sh
+      - name: Test module contracts
+        run: bash tests/unit/test-module-contract.sh
+      - name: Test current tree security invariants
+        run: bash tests/security/test-current-tree.sh
