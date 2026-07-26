@@ -1,0 +1,214 @@
+name: Integrate operational commands
+on:
+  push:
+    branches: [feat/transactional-architecture]
+    paths: ['.integrate-operations-trigger']
+permissions:
+  contents: write
+concurrency:
+  group: integrate-operations
+  cancel-in-progress: false
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/transactional-architecture
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Integrate license and backup commands
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          grep -q 'source "$SCRIPT_DIR/lib/license.sh"' install.sh \
+            || sed -i '/source "$SCRIPT_DIR\/lib\/secrets.sh"/a source "$SCRIPT_DIR/lib/license.sh"' install.sh
+          grep -q 'license_validate_if_required' install.sh \
+            || sed -i '/load_hextunnel_secrets/a\  license_validate_if_required' install.sh
+
+          sed -i 's/hextunnel-health hextunnel-nat/hextunnel-health hextunnel-nat hextunnel-backup/' lib/framework.sh
+
+          grep -q '^hextunnel backup' bin/hextunnel || sed -i '/hextunnel update <comando\.\.\.>/a hextunnel backup <create|verify> [opciones]' bin/hextunnel
+          grep -q '^  backup)' bin/hextunnel \
+            || sed -i '/^  update)/a\  backup) shift; exec "$ROOT/bin/hextunnel-backup" "$@" ;;' bin/hextunnel
+
+          cat > config/hextunnel.env.example <<'EOF'
+          # Copiar a /etc/hextunnel/hextunnel.env y aplicar chmod 600.
+          HEXTUNNEL_DOMAIN=""
+          HEXTUNNEL_ADMIN_IP=""
+          HEXTUNNEL_ALLOW_ROOT_PASSWORD=0
+          HEXTUNNEL_WEBMIN_PUBLIC=0
+
+          HEXTUNNEL_XRAY_VERSION="v26.3.27"
+          HEXTUNNEL_SINGBOX_VERSION="1.12.22"
+          HEXTUNNEL_HYSTERIA2_VERSION="app/v2.9.3"
+          HEXTUNNEL_ZIVPN_VERSION="udp-zivpn_1.4.9"
+
+          HEXTUNNEL_SLOWDNS_NS=""
+          HEXTUNNEL_SLOWDNS_BINARY_URL="https://raw.githubusercontent.com/fisabiliyusri/SLDNS/main/slowdns/sldns-server"
+          HEXTUNNEL_SLOWDNS_SHA256=""
+          HEXTUNNEL_SLIPSTREAM_DOMAIN=""
+          HEXTUNNEL_SLIPSTREAM_COMMIT="bc772dd07d9a136dbd7553b0da575526de207847"
+          HEXTUNNEL_UDP_CUSTOM_BINARY_URL=""
+          HEXTUNNEL_UDP_CUSTOM_SHA256=""
+
+          # Solo para componentes heredados sin digest publicado. No recomendado.
+          HEXTUNNEL_ALLOW_UNVERIFIED_DOWNLOADS=0
+
+          HEXTUNNEL_UPDATE_CHANNEL="stable"
+          HEXTUNNEL_STABLE_MANIFEST_URL=""
+          HEXTUNNEL_TESTING_MANIFEST_URL=""
+          HEXTUNNEL_UPDATE_PUBLIC_KEY="/etc/hextunnel/update-public.pem"
+
+          # Licencia segura opcional. Requiere un backend HTTPS que firme respuestas.
+          HEXTUNNEL_REQUIRE_LICENSE=0
+          HEXTUNNEL_LICENSE_ENDPOINT=""
+          HEXTUNNEL_LICENSE_PUBLIC_KEY="/etc/hextunnel/license-public.pem"
+          HEXTUNNEL_LICENSE_FILE="/etc/hextunnel/license.key"
+          EOF
+          sed -i 's/^          //' config/hextunnel.env.example
+
+          cat > docs/LICENSE_VALIDATION.md <<'EOF'
+          # Validación segura de licencia
+
+          El núcleo nuevo no reproduce el envío heredado por HTTP dentro de la URL. La licencia segura permanece desactivada hasta que el propietario publique un backend compatible.
+
+          Cuando `HEXTUNNEL_REQUIRE_LICENSE=1`, el cliente:
+
+          1. exige un endpoint `https://`;
+          2. envía `key`, IP, nonce aleatorio y timestamp mediante POST JSON;
+          3. exige que la respuesta repita el nonce y la IP;
+          4. comprueba la fecha de expiración;
+          5. verifica una firma RSA/SHA-256 con `/etc/hextunnel/license-public.pem`.
+
+          La respuesta debe tener esta forma:
+
+          ```json
+          {
+            "status": "valid",
+            "expires_at": "2027-01-01T00:00:00Z",
+            "nonce": "NONCE_DE_LA_SOLICITUD",
+            "subject": "IP_PUBLICA",
+            "signature": "FIRMA_BASE64"
+          }
+          ```
+
+          La firma cubre exactamente:
+
+          ```text
+          status=valid
+          expires_at=2027-01-01T00:00:00Z
+          nonce=NONCE_DE_LA_SOLICITUD
+          subject=IP_PUBLICA
+          ```
+
+          La clave privada de firma permanece únicamente en el servidor de licencias. El VPS contiene solo la clave pública.
+          EOF
+          sed -i 's/^          //' docs/LICENSE_VALIDATION.md
+
+          cat > README.md <<'EOF'
+          # Hex Tunnel Script
+
+          Instalador modular y transaccional para VPS Debian/Ubuntu. La fuente mantenible es Bash en `lib/`, `modules/`, `bin/` y `templates/`; no depende de generadores Python.
+
+          ## Módulos
+
+          - `ssh`: OpenSSH, Stunnel, SSLH, proxies TCP, Fail2ban y límites de sesiones.
+          - `xray`: VLESS, VMess y Trojan sobre TCP, WS, XHTTP, HTTPUpgrade y gRPC.
+          - `hysteria`: Hysteria v1 mediante Sing-box aislado.
+          - `hysteria2`: Hysteria 2 oficial.
+          - `udp-custom`: UDP Custom y BadVPN.
+          - `slowdns`: SlowDNS con claves únicas por VPS.
+          - `slipstream`: SlipStream, Dante y DNSdist.
+          - `zivpn`: ZiVPN con NAT UDP reversible.
+          - `webmin`: Webmin con TLS obligatorio y localhost por defecto.
+          - `legacy-all`: flujo heredado sanitizado para compatibilidad.
+
+          ## Instalación
+
+          ```bash
+          sudo ./install.sh
+          sudo ./install.sh install ssh xray hysteria hysteria2 --no-reboot
+          sudo ./install.sh install --non-interactive --modules=slowdns,slipstream --no-reboot
+          ```
+
+          Opciones: `--dry-run`, `--non-interactive`, `--no-reboot` y `--force`. El modo no interactivo exige módulos explícitos.
+
+          ## Transacciones
+
+          Antes de modificar archivos o reiniciar servicios se guarda el estado necesario. También se capturan firewall, NAT, servicios, marcadores y usuarios administrados. Un fallo ejecuta rollback automático.
+
+          ```bash
+          hextunnel rollback
+          hextunnel rollback ID
+          ```
+
+          ## Firewall y DNS
+
+          Se detecta UFW, nftables o iptables. Las reglas llevan etiquetas propias y la desinstalación no elimina reglas del administrador. SlowDNS/DNSdist escuchan en la IP pública concreta, sin desactivar `systemd-resolved` ni reemplazar `/etc/resolv.conf`.
+
+          ## Telegram y secretos
+
+          Las funciones de Telegram usan `HEXTUNNEL_TELEGRAM_CHAT_ID` y `HEXTUNNEL_TELEGRAM_BOT_TOKEN`. Guarda los valores en `/etc/hextunnel/secrets.env` con propietario root y modo `600`.
+
+          ## Operación
+
+          ```bash
+          hextunnel status
+          hextunnel doctor
+          hextunnel account create vless cliente 2027-01-01
+          hextunnel account suspend vless cliente
+          hextunnel account resume vless cliente
+          hextunnel update check --channel stable
+          hextunnel backup create
+          ```
+
+          Los reportes se sanitizan. La suspensión conserva credenciales en un almacén privado. Cuotas/velocidad distintas de cero se rechazan hasta existir medición real.
+
+          ## Respaldos
+
+          ```bash
+          hextunnel backup create --output /root/hextunnel.tar.gz
+          hextunnel backup create --output /root/hextunnel.tar.gz --age-recipient age1...
+          hextunnel backup verify /root/hextunnel.tar.gz
+          ```
+
+          Los archivos se crean con modo `600`; el cifrado `age` es opcional.
+
+          ## Actualizaciones y licencia
+
+          Las actualizaciones exigen manifiesto firmado y SHA-256 por artefacto. Consulta `docs/UPDATES.md`. La licencia segura opcional usa HTTPS/POST, nonce y firma RSA; consulta `docs/LICENSE_VALIDATION.md`. El backend heredado HTTP no se usa en el núcleo nuevo.
+
+          ## Compatibilidad y validación
+
+          `legacy/install-all.sh` conserva funciones todavía no migradas, pero no tiene el mismo rollback granular. Antes de fusionar, prueba en VPS desechables Debian 12 y Ubuntu 22.04/24.04.
+          EOF
+          sed -i 's/^          //' README.md
+
+          rm -f .integrate-operations-trigger .github/workflows/integrate-operations.yml
+
+      - name: Validate integration
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update
+          sudo apt-get install -y jq shellcheck
+          bash tests/integration/test-syntax.sh
+          bash tests/unit/test-core.sh
+          bash tests/unit/test-module-contract.sh
+          [[ ! -x tests/unit/test-xray-template.sh ]] || bash tests/unit/test-xray-template.sh
+          bash tests/security/test-current-tree.sh
+          [[ ! -x tests/security/test-hardening.sh ]] || bash tests/security/test-hardening.sh
+          find . -type f -name '*.sh' -not -path './legacy/*' -not -path './.git/*' -print0 \
+            | xargs -0 shellcheck --severity=error
+      - name: Publish operational integration
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'feat: integrate secure license and backup operations'
+          git push origin HEAD:feat/transactional-architecture
