@@ -63,19 +63,21 @@ resolve_module_dependencies() {
 }
 
 module_mark_installed() {
-  local module="$1"
+  local module="$1" marker="$HEXTUNNEL_MODULE_STATE_DIR/$module"
   ensure_dir 700 "$HEXTUNNEL_MODULE_STATE_DIR"
+  backup_path "$marker"
   [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] && return 0
-  cat > "$HEXTUNNEL_MODULE_STATE_DIR/$module" <<EOF
+  cat > "$marker" <<EOF
 installed_at=$(date -Is)
 version=${HEXTUNNEL_VERSION:-development}
 EOF
-  chmod 600 "$HEXTUNNEL_MODULE_STATE_DIR/$module"
+  chmod 600 "$marker"
 }
 
 module_mark_uninstalled() {
-  local module="$1"
-  [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] || rm -f "$HEXTUNNEL_MODULE_STATE_DIR/$module"
+  local module="$1" marker="$HEXTUNNEL_MODULE_STATE_DIR/$module"
+  backup_path "$marker"
+  [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] || rm -f "$marker"
 }
 
 module_is_installed() {
@@ -85,8 +87,8 @@ module_is_installed() {
 module_install() {
   local module="$1"
   log_info "Instalando módulo: $module"
-  module_call "$module" install
   firewall_apply_module_ports "$module"
+  module_call "$module" install
   module_call "$module" validate
   module_mark_installed "$module"
   log_success "Módulo instalado: $module"
