@@ -85,6 +85,7 @@ jobs:
           docker exec hextunnel-debian12 install -d -m 700 /etc/hextunnel
           docker cp /tmp/debian-hextunnel.env hextunnel-debian12:/etc/hextunnel/hextunnel.env
           docker cp /tmp/debian-secrets.env hextunnel-debian12:/etc/hextunnel/secrets.env
+          docker exec hextunnel-debian12 chown root:root /etc/hextunnel/hextunnel.env /etc/hextunnel/secrets.env
           docker exec hextunnel-debian12 chmod 600 /etc/hextunnel/hextunnel.env /etc/hextunnel/secrets.env
 
       - name: Install maintained core modules
@@ -92,6 +93,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           docker exec hextunnel-debian12 bash -lc '
+            set -Eeuo pipefail
             cd /workspace
             bash ./install.sh install ssh xray hysteria2 \
               --non-interactive --no-reboot --force \
@@ -137,6 +139,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           docker exec hextunnel-debian12 bash -lc '
+            set -Eeuo pipefail
             hextunnel uninstall hysteria2 xray ssh \
               2>&1 | tee /tmp/debian12-uninstall.log
           '
@@ -152,6 +155,7 @@ jobs:
         run: |
           set +e
           docker exec hextunnel-debian12 bash -lc '
+            set +e
             {
               echo "=== os ==="
               cat /etc/os-release
