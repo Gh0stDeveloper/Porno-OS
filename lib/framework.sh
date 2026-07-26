@@ -25,7 +25,7 @@ install_framework() {
   fi
 
   local command
-  for command in hextunnel hextunnel-doctor hextunnel-account hextunnel-update hextunnel-health; do
+  for command in hextunnel hextunnel-doctor hextunnel-account hextunnel-update hextunnel-health hextunnel-nat; do
     [[ -f "$HEXTUNNEL_INSTALL_DIR/bin/$command" || "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] || continue
     backup_path "/usr/local/bin/$command"
     if [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]]; then
