@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 
-slowdns_ports() { printf '%s\n' 'udp 53 0.0.0.0/0 public'; }
+slowdns_ports() {
+  local address="${HEXTUNNEL_SLOWDNS_LISTEN_ADDRESS:-}" port="${HEXTUNNEL_SLOWDNS_LISTEN_PORT:-53}"
+  [[ "$address" == 127.* || "$address" == ::1 ]] && return 0
+  printf 'udp %s 0.0.0.0/0 public\n' "$port"
+}
 slowdns_dependencies() { printf '%s\n' ssh; }
 
 slowdns_download_binary() {
@@ -54,6 +58,7 @@ slowdns_write_environment() {
   fi
   [[ -n "$ns" ]] || die "HEXTUNNEL_SLOWDNS_NS es obligatorio."
   [[ "$ns" =~ ^[A-Za-z0-9.-]+$ ]] || die "Nameserver SlowDNS inválido."
+  [[ "$port" =~ ^[0-9]+$ && "$port" -ge 1 && "$port" -le 65535 ]] || die "Puerto SlowDNS inválido: $port"
   [[ -n "$address" ]] || die "No se pudo determinar la IP de escucha para SlowDNS."
   write_file /etc/default/hextunnel-slowdns 600 <<EOF
 SLOWDNS_NS=$ns
@@ -105,6 +110,7 @@ EOF
 slowdns_set_listener() {
   local address="$1" port="$2"
   [[ -f /etc/default/hextunnel-slowdns ]] || return 0
+  [[ "$port" =~ ^[0-9]+$ && "$port" -ge 1 && "$port" -le 65535 ]] || die "Puerto SlowDNS inválido: $port"
   backup_path /etc/default/hextunnel-slowdns
   if [[ "${HEXTUNNEL_DRY_RUN:-0}" != 1 ]]; then
     sed -i -E "s/^SLOWDNS_LISTEN_ADDRESS=.*/SLOWDNS_LISTEN_ADDRESS=$address/" /etc/default/hextunnel-slowdns
@@ -120,7 +126,7 @@ slowdns_uninstall() {
   run_cmd rm -f /etc/default/hextunnel-slowdns /etc/systemd/system/server-sldns.service /usr/local/bin/sldns-server
   systemd_reload
   remove_managed_system_user hextunnel-slowdns
-  firewall_close_port udp 53
+  firewall_close_port udp "${HEXTUNNEL_SLOWDNS_LISTEN_PORT:-53}"
 }
 
 slowdns_validate() {
@@ -137,7 +143,7 @@ slowdns_doctor() {
     address="$SLOWDNS_LISTEN_ADDRESS"
     port="$SLOWDNS_LISTEN_PORT"
   fi
-  [[ "$address" == 127.* ]] && scope=any
+  [[ "$address" == 127.* || "$address" == ::1 ]] && scope=any
   printf 'service=%s listener=%s:%s:' "$(systemctl is-active server-sldns 2>/dev/null || true)" "${address:-unknown}" "$port"
   systemctl is-active --quiet server-sldns || failed=1
   if port_is_listening udp "$port" "$scope"; then printf open; else printf closed; failed=1; fi
