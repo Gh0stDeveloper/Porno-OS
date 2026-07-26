@@ -57,7 +57,7 @@ Uso:
   ./install.sh legacy
 
 Módulos:
-  ssh xray hysteria2 slowdns slipstream zivpn webmin legacy-all
+  ssh xray hysteria hysteria2 udp-custom slowdns slipstream zivpn webmin legacy-all
 
 Opciones:
   --dry-run          Mostrar acciones sin modificar el VPS.
@@ -97,15 +97,17 @@ select_modules_interactively() {
   cat <<'EOF'
 
 Componentes disponibles:
-  1) SSH + TLS
-  2) Xray
-  3) Hysteria 2
-  4) SlowDNS
-  5) SlipStream
-  6) ZiVPN
-  7) Webmin
-  8) Instalar todos los módulos nuevos
-  9) Instalador original completo (compatibilidad)
+   1) SSH + TLS
+   2) Xray
+   3) Hysteria v1
+   4) Hysteria 2
+   5) UDP Custom
+   6) SlowDNS
+   7) SlipStream
+   8) ZiVPN
+   9) Webmin
+  10) Instalar todos los módulos nuevos
+  11) Instalador original completo (compatibilidad)
 EOF
   read -r -p "Selecciona números separados por espacios: " choice
   HEXTUNNEL_REQUESTED_MODULES=()
@@ -113,13 +115,15 @@ EOF
     case "$item" in
       1) HEXTUNNEL_REQUESTED_MODULES+=(ssh) ;;
       2) HEXTUNNEL_REQUESTED_MODULES+=(xray) ;;
-      3) HEXTUNNEL_REQUESTED_MODULES+=(hysteria2) ;;
-      4) HEXTUNNEL_REQUESTED_MODULES+=(slowdns) ;;
-      5) HEXTUNNEL_REQUESTED_MODULES+=(slipstream) ;;
-      6) HEXTUNNEL_REQUESTED_MODULES+=(zivpn) ;;
-      7) HEXTUNNEL_REQUESTED_MODULES+=(webmin) ;;
-      8) HEXTUNNEL_REQUESTED_MODULES=(ssh xray hysteria2 slowdns slipstream zivpn webmin) ;;
-      9) HEXTUNNEL_REQUESTED_MODULES=(legacy-all) ;;
+      3) HEXTUNNEL_REQUESTED_MODULES+=(hysteria) ;;
+      4) HEXTUNNEL_REQUESTED_MODULES+=(hysteria2) ;;
+      5) HEXTUNNEL_REQUESTED_MODULES+=(udp-custom) ;;
+      6) HEXTUNNEL_REQUESTED_MODULES+=(slowdns) ;;
+      7) HEXTUNNEL_REQUESTED_MODULES+=(slipstream) ;;
+      8) HEXTUNNEL_REQUESTED_MODULES+=(zivpn) ;;
+      9) HEXTUNNEL_REQUESTED_MODULES+=(webmin) ;;
+      10) HEXTUNNEL_REQUESTED_MODULES=(ssh xray hysteria hysteria2 udp-custom slowdns slipstream zivpn webmin) ;;
+      11) HEXTUNNEL_REQUESTED_MODULES=(legacy-all) ;;
       *) die "Selección desconocida: $item" ;;
     esac
   done
@@ -159,7 +163,9 @@ install_selected_modules() {
 uninstall_selected_modules() {
   require_root
   ((${#HEXTUNNEL_REQUESTED_MODULES[@]} > 0)) || die "Indica un módulo o --all."
-  if [[ "${HEXTUNNEL_REQUESTED_MODULES[0]}" == --all ]]; then HEXTUNNEL_REQUESTED_MODULES=(webmin zivpn slipstream slowdns hysteria2 xray ssh); fi
+  if [[ "${HEXTUNNEL_REQUESTED_MODULES[0]}" == --all ]]; then
+    HEXTUNNEL_REQUESTED_MODULES=(webmin zivpn slipstream slowdns udp-custom hysteria2 hysteria xray ssh)
+  fi
   transaction_begin "uninstall-$(join_by - "${HEXTUNNEL_REQUESTED_MODULES[@]}")"
   trap 'transaction_fail "$?" "$BASH_LINENO" "$BASH_COMMAND"' ERR INT TERM
   local module
