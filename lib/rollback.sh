@@ -12,6 +12,7 @@ transaction_begin() {
     mkdir -p "$HEXTUNNEL_TRANSACTION_DIR/files"
     : > "$HEXTUNNEL_TRANSACTION_DIR/files.manifest"
     : > "$HEXTUNNEL_TRANSACTION_DIR/services.manifest"
+    : > "$HEXTUNNEL_TRANSACTION_DIR/created-users.manifest"
     printf '%s\n' RUNNING > "$HEXTUNNEL_TRANSACTION_DIR/status"
   fi
   log_info "Transacción iniciada: $id"
@@ -61,6 +62,18 @@ restore_transaction_services() {
   done < "$dir/services.manifest"
 }
 
+restore_created_users() {
+  local dir="$1" marker username group_created
+  [[ -f "$dir/created-users.manifest" ]] || return 0
+  tac "$dir/created-users.manifest" | while IFS='|' read -r marker username group_created; do
+    [[ "$marker" == USER && -n "$username" ]] || continue
+    userdel "$username" >/dev/null 2>&1 || true
+    if [[ "$group_created" == 1 ]]; then
+      groupdel "$username" >/dev/null 2>&1 || true
+    fi
+  done
+}
+
 rollback_transaction() {
   require_root
   local id="${1:-}" dir
@@ -76,6 +89,7 @@ rollback_transaction() {
   restore_transaction_files "$dir"
   firewall_restore "$dir"
   restore_transaction_services "$dir"
+  restore_created_users "$dir"
   printf '%s\n' ROLLED_BACK > "$dir/status"
   log_success "Rollback completado."
 }
