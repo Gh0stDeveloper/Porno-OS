@@ -5,7 +5,6 @@ ssh_ports() {
 tcp 22
 tcp 299
 tcp 4443
-tcp 666
 tcp 25
 tcp 2082
 tcp 2086
@@ -13,6 +12,10 @@ tcp 10080
 EOF
 }
 ssh_dependencies() { :; }
+ssh_allow_port_conflict() {
+  local protocol="$1" port="$2" owner="$3"
+  [[ "$protocol" == tcp && "$port" == 22 && "$owner" == *sshd* ]]
+}
 
 ssh_install_packages() {
   run_cmd apt-get update
@@ -246,7 +249,7 @@ ssh_uninstall() {
   done
   systemd_reload
   safe_restart_service ssh "sshd -t"
-  for port in 299 4443 666 25 2082 2086 10080; do firewall_close_port tcp "$port"; done
+  for port in 299 4443 25 2082 2086 10080; do firewall_close_port tcp "$port"; done
 }
 
 ssh_validate() {
