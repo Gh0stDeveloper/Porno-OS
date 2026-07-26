@@ -33,6 +33,10 @@ ssh_certificate_common_name() {
   printf '%s' "$value"
 }
 
+ssh_prepare_runtime() {
+  ensure_dir 755 /run/sshd
+}
+
 ssh_ensure_certificate() {
   ensure_dir 700 /etc/xray
   if [[ -s /etc/xray/xray.crt && -s /etc/xray/xray.key ]]; then
@@ -130,7 +134,6 @@ ssh_install_sslh() {
   ensure_dir 700 /etc/hextunnel
 
   write_file /etc/hextunnel/sslh.cfg 644 <<'EOF'
-verbose: false;
 foreground: true;
 inetd: false;
 numeric: true;
@@ -193,6 +196,7 @@ EOF
 
 ssh_install() {
   ssh_install_packages
+  ssh_prepare_runtime
   ssh_ensure_certificate
   backup_paths \
     /etc/ssh/sshd_config.d/90-hextunnel.conf \
@@ -221,7 +225,6 @@ ClientAliveInterval 120
 ClientAliveCountMax 2
 MaxAuthTries 4
 LoginGraceTime 30
-Subsystem sftp internal-sftp
 EOF
 
   write_file /etc/stunnel/hextunnel.conf 600 <<'EOF'
@@ -335,6 +338,7 @@ ssh_uninstall() {
     run_cmd rm -f "$path"
   done
   systemd_reload
+  ssh_prepare_runtime
   safe_restart_service ssh "sshd -t"
   for port in 299 4443 25 2082 2086 10080; do
     firewall_close_port tcp "$port"
@@ -342,6 +346,7 @@ ssh_uninstall() {
 }
 
 ssh_validate() {
+  ssh_prepare_runtime
   command_exists sshd && sshd -t
   [[ ! -f /etc/stunnel/hextunnel.conf ]] || test -s /etc/xray/xray.key
   [[ -s /etc/hextunnel/sslh.cfg && -x /usr/local/sbin/hextunnel-sslh ]]
@@ -360,6 +365,7 @@ ssh_doctor() {
   systemctl is-active --quiet ssh || failed=1
   systemctl is-active --quiet hextunnel-sslh || failed=1
   systemctl is-active --quiet stunnel4 || failed=1
+  ssh_prepare_runtime
   sshd -t >/dev/null 2>&1 || failed=1
   for port in 22 299 4443 666 25 2082 2086 10080; do
     if port_is_listening tcp "$port"; then
