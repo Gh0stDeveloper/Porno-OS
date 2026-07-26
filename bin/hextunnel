@@ -67,8 +67,10 @@ doctor_certificates() {
 }
 
 doctor() {
-  local report="${1:-}" output tmp module status=0 checked=0
-  tmp="$(mktemp /tmp/hextunnel-doctor.XXXXXX)"
+  local report="${1:-}" output raw sanitized module status=0 checked=0
+  raw="$(mktemp /tmp/hextunnel-doctor-raw.XXXXXX)"
+  sanitized="$(mktemp /tmp/hextunnel-doctor.XXXXXX)"
+  trap 'rm -f "${raw:-}" "${sanitized:-}"' RETURN
   {
     echo "Hex Tunnel Doctor"
     echo "Fecha: $(date -Is)"
@@ -117,10 +119,10 @@ doctor() {
     echo
     echo "Errores recientes de systemd:"
     journalctl -p err -n 80 --no-pager 2>/dev/null || true
-  } | sanitize_text > "$tmp"
+  } > "$raw"
+  sanitize_text < "$raw" > "$sanitized"
   output="${report:-$HEXTUNNEL_LOG_DIR/doctor-$(date +%Y%m%d-%H%M%S).txt}"
-  install -m 600 "$tmp" "$output"
-  rm -f "$tmp"
+  install -m 600 "$sanitized" "$output"
   printf 'Reporte generado: %s\n' "$output"
   return "$status"
 }
