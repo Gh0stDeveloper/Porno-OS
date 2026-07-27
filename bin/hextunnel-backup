@@ -24,7 +24,9 @@ EOF
 backup_paths_list() {
   cat <<'EOF'
 etc/hextunnel
+etc/deekayvpn
 etc/xray
+etc/hysteria
 etc/hysteria1
 etc/hysteria2
 etc/udp-custom
@@ -33,14 +35,63 @@ etc/slowdns
 etc/slipstream
 etc/socksproxy
 etc/webmin
+etc/nginx
+etc/squid
+etc/haproxy
+etc/sslh
+etc/letsencrypt/live
+etc/letsencrypt/archive
+etc/letsencrypt/renewal
+etc/letsencrypt/renewal-hooks
+etc/ssh/sshd_config
 etc/ssh/sshd_config.d/90-hextunnel.conf
-etc/stunnel/hextunnel.conf
+etc/pam.d/common-password
+etc/shells
+etc/stunnel
 etc/default/hextunnel-slowdns
 etc/default/stunnel4
 etc/default/sslh
 etc/dnsdist/dnsdist.conf
 etc/danted.conf
 etc/fail2ban/jail.d/hextunnel-sshd.local
+etc/deekaystartup
+etc/zorro-luffy
+etc/cron.d/service-checker
+etc/cron.d/logrotate
+etc/cron.d/xray-expiry
+etc/cron.d/hysteria-expiry
+etc/cron.d/hysteria2-expiry
+etc/cron.d/certbot-renew
+etc/sysctl.d/99-freenet-tuning.conf
+etc/security/limits.d/99-freenet.conf
+etc/systemd/system/ws-proxy@.service
+etc/systemd/system/server-sldns.service
+etc/systemd/system/badvpn.service
+etc/systemd/system/udp-custom.service
+etc/systemd/system/xray.service
+etc/systemd/system/slipstream.service
+etc/systemd/system/hysteria-server.service
+etc/systemd/system/hysteria-nat.service
+etc/systemd/system/hysteria2-server.service
+etc/systemd/system/zivpn.service
+etc/systemd/system/zivpn-nat.service
+etc/systemd/system/deekaystartup.service
+root/udp
+home/vps/public_html
+usr/local/bin/menu
+usr/local/bin/xray
+usr/local/bin/hysteria2
+usr/local/bin/zivpn
+usr/local/bin/sldns-server
+usr/local/bin/udp-custom
+usr/local/sbin/xray-install-version
+usr/local/libexec/hysteria2-auth
+usr/local/libexec/hextunnel
+usr/local/libexec/hextunnel-badvpn-udpgw
+usr/bin/menu
+usr/bin/Menu
+usr/bin/badvpn-udpgw
+opt/slipstream-rust
 var/lib/hextunnel
 opt/hextunnel
 EOF
@@ -174,17 +225,28 @@ backup_validate_staged_links() {
   done < <(find "$stage" -type l -print0)
 }
 
+backup_restart_unit() {
+  local unit="$1"
+  systemctl list-unit-files "$unit" >/dev/null 2>&1 || return 0
+  systemctl try-restart "$unit" >/dev/null 2>&1 || log_warn "No se pudo reiniciar $unit"
+}
+
 backup_restore_services() {
   local unit
   systemctl daemon-reload
   for unit in \
-    ssh.service sshd.service stunnel4.service hextunnel-sslh.service xray.service \
-    hextunnel-xray-grpc.service hysteria1.service hysteria2.service udp-custom.service \
-    badvpn-udpgw.service slowdns.service slipstream-server.service dnsdist.service \
-    danted.service zivpn.service webmin.service fail2ban.service hextunnel-health.timer; do
-    systemctl list-unit-files "$unit" >/dev/null 2>&1 || continue
-    systemctl try-restart "$unit" >/dev/null 2>&1 || log_warn "No se pudo reiniciar $unit"
+    ssh.service sshd.service stunnel4.service sslh.service hextunnel-sslh.service \
+    nginx.service squid.service xray.service hextunnel-xray-grpc.service \
+    hysteria-server.service hysteria1.service hysteria2-server.service hysteria2.service \
+    udp-custom.service badvpn.service badvpn-udpgw.service server-sldns.service slowdns.service \
+    slipstream.service slipstream-server.service dnsdist.service danted.service \
+    zivpn.service webmin.service fail2ban.service deekaystartup.service hextunnel-health.timer; do
+    backup_restart_unit "$unit"
   done
+  while IFS= read -r unit; do
+    [[ -n "$unit" ]] || continue
+    systemctl try-restart "$unit" >/dev/null 2>&1 || log_warn "No se pudo reiniciar $unit"
+  done < <(systemctl list-units --all --type=service 'ws-proxy@*.service' --no-legend --plain 2>/dev/null | awk '{print $1}')
 }
 
 backup_restore() {
