@@ -15,7 +15,12 @@ beta_install_error() {
 
 ROOT="${HEXTUNNEL_BETA_PACKAGE_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)}"
 LEGACY_INSTALLER="$ROOT/legacy/install-all.sh"
+VERSION_FILE="$ROOT/VERSION"
 [[ -f "$LEGACY_INSTALLER" ]] || beta_install_error "No se encontró el instalador original completo."
+[[ -s "$VERSION_FILE" ]] || beta_install_error "El paquete no contiene VERSION."
+VERSION="$(tr -d '\r\n' < "$VERSION_FILE")"
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] \
+  || beta_install_error "La versión del paquete es inválida."
 
 validation_calls="$(grep -cE '^[[:space:]]*validar_key_hextunnel[[:space:]]*$' "$LEGACY_INSTALLER" || true)"
 [[ "$validation_calls" == 1 ]] \
@@ -45,8 +50,8 @@ rm -f "$runtime_installer"
 
 install -d -m 700 /etc/hextunnel
 cat > /etc/hextunnel/beta-state.env <<EOF
-HEXTUNNEL_CHANNEL=beta
-HEXTUNNEL_VERSION=1.0.0-beta.1
+HEXTUNNEL_CHANNEL=release-candidate
+HEXTUNNEL_VERSION=$(printf '%q' "$VERSION")
 HEXTUNNEL_SOURCE_SHA=$(printf '%q' "$HEXTUNNEL_BETA_SOURCE_SHA")
 HEXTUNNEL_INSTALLED_AT=$(printf '%q' "$(date -u +%Y-%m-%dT%H:%M:%SZ)")
 EOF
@@ -56,7 +61,7 @@ if [[ -x /usr/local/bin/menu ]]; then
   if [[ -t 0 && -t 1 ]]; then
     exec /usr/local/bin/menu
   fi
-  printf 'Beta instalada. Abre el panel con: sudo menu\n'
+  printf 'Release candidate instalada. Abre el panel con: sudo menu\n'
   exit 0
 fi
 
