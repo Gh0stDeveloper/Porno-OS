@@ -20,6 +20,9 @@ on:
       - modules/slipstream.sh
       - .github/workflows/slipstream-debian12-integration.yml
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
