@@ -15,9 +15,24 @@ validate_operating_system() {
   # shellcheck disable=SC1091
   source /etc/os-release
   case "${ID:-}:${VERSION_ID:-}" in
-    debian:11|debian:12|ubuntu:20.04|ubuntu:22.04|ubuntu:24.04) ;;
-    *) die "Sistema no soportado: ${ID:-desconocido} ${VERSION_ID:-}." ;;
+    debian:12|ubuntu:22.04|ubuntu:24.04) ;;
+    *)
+      if [[ "${HEXTUNNEL_ALLOW_UNTESTED_PLATFORM:-0}" == 1 ]]; then
+        log_warn "Plataforma no validada habilitada explícitamente: ${ID:-desconocido} ${VERSION_ID:-}."
+      else
+        die "Plataforma de producción no soportada: ${ID:-desconocido} ${VERSION_ID:-}. Usa Debian 12, Ubuntu 22.04 o Ubuntu 24.04."
+      fi
+      ;;
   esac
+}
+
+validate_architecture() {
+  HEXTUNNEL_ARCH="$(normalize_architecture)" || die "Arquitectura no reconocida: $(uname -m)."
+  if [[ "$HEXTUNNEL_ARCH" != amd64 && "${HEXTUNNEL_ALLOW_UNTESTED_PLATFORM:-0}" != 1 ]]; then
+    die "La edición de producción está validada únicamente para amd64/x86_64; arquitectura detectada: $HEXTUNNEL_ARCH."
+  fi
+  [[ "$HEXTUNNEL_ARCH" == amd64 ]] || log_warn "Arquitectura experimental habilitada: $HEXTUNNEL_ARCH"
+  export HEXTUNNEL_ARCH
 }
 
 validate_resources() {
@@ -26,6 +41,17 @@ validate_resources() {
   disk_kb="$(df -Pk / | awk 'NR==2 {print $4}')"
   ((mem_kb >= ${HEXTUNNEL_MIN_RAM_KB:-524288})) || die "Se requieren al menos 512 MiB de RAM."
   ((disk_kb >= ${HEXTUNNEL_MIN_DISK_KB:-1048576})) || die "Se requiere al menos 1 GiB libre en /."
+  ((mem_kb >= 1048576)) || log_warn "Se recomienda al menos 1 GiB de RAM para instalar todos los módulos."
+  ((disk_kb >= 2097152)) || log_warn "Se recomiendan al menos 2 GiB libres para instalación, compilación y respaldos."
+}
+
+validate_system_state() {
+  [[ -d /run/systemd/system ]] || die "El sistema no está iniciado con systemd."
+  findmnt -n -o OPTIONS / 2>/dev/null | grep -qw rw || die "El sistema de archivos raíz no está montado en modo escritura."
+  (( $(date -u +%s) >= 1735689600 )) || die "El reloj del VPS es inválido; corrige fecha y sincronización antes de instalar."
+  if command_exists timedatectl && ! timedatectl show -p NTPSynchronized --value 2>/dev/null | grep -qx yes; then
+    log_warn "NTP todavía no aparece sincronizado. Las licencias, TLS y actualizaciones firmadas dependen de una hora correcta."
+  fi
 }
 
 validate_connectivity() {
@@ -64,13 +90,9 @@ port_is_listening() {
 
 module_allows_existing_listener() {
   local module="$1" protocol="$2" port="$3" owner="$4" function
-
-  # Existing OpenSSH installations may be owned by sshd directly or by
-  # systemd socket activation. Only tcp/22 receives this built-in exception.
   if [[ "$module" == ssh && "$protocol" == tcp && "$port" == 22 ]]; then
     [[ "$owner" == *sshd* || "$owner" == *systemd* ]] && return 0
   fi
-
   function="$(module_function "$module" allow_port_conflict)"
   declare -F "$function" >/dev/null 2>&1 || return 1
   "$function" "$protocol" "$port" "$owner"
@@ -100,13 +122,14 @@ preflight_all() {
   command_exists systemctl || die "systemd/systemctl es obligatorio."
   command_exists curl || die "curl es obligatorio."
   command_exists ss || die "iproute2/ss es obligatorio."
+  command_exists flock || die "util-linux/flock es obligatorio."
   validate_operating_system
-  HEXTUNNEL_ARCH="$(normalize_architecture)" || die "Arquitectura no soportada: $(uname -m)."
-  export HEXTUNNEL_ARCH
+  validate_architecture
+  validate_system_state
   validate_resources
   validate_connectivity
   validate_requested_ports "$@"
-  log_success "Preflight correcto: OS, arquitectura, RAM, disco, red y puertos."
+  log_success "Preflight correcto: plataforma, systemd, reloj, RAM, disco, red y puertos."
 }
 
 validate_selected_modules() {
