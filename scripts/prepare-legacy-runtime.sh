@@ -31,7 +31,7 @@ function emit_header() {
 }
 BEGIN {
   license=upgrade=resolved_stop=resolved_disable=resolv_rm=resolv_write=firewall_purge=0
-  webmin=slowdns=singbox=badvpn=udp_binary=udp_config=zivpn=profile=menu_slip=0
+  webmin=slowdns=singbox=badvpn=udp_binary=udp_config=zivpn=profile=menu_slip=region_check=0
   skip_webmin=skip_profile=skip_badvpn=skip_menu_slip=0
 }
 NR == 1 { print; emit_header(); next }
@@ -163,6 +163,12 @@ $0 == "    InstallSlipstream=\"y\"" {
 $0 ~ /https:\/\/sh\.rustup\.rs[[:space:]]*\|[[:space:]]*sh/ {
   print "        echo \"El instalador Rust heredado está deshabilitado; use el módulo mantenido.\""; next
 }
+$0 ~ /lmc999\/RegionRestrictionCheck\/main\/check\.sh/ {
+  region_check++
+  print "         echo \"La prueba externa de restricciones se deshabilitó porque ejecutaba código remoto mutable.\""
+  print "         /usr/local/bin/hextunnel doctor"
+  next
+}
 $0 ~ /SLDNS\/main\/slowdns\/sldns-server/ {
   slowdns++; print "\"$HEXTUNNEL_PACKAGE_ROOT/bin/hextunnel-install-locked-component\" slowdns"; next
 }
@@ -186,7 +192,7 @@ END {
   if (license != 1) { print "ERROR: llamada de licencia inesperada: " license > "/dev/stderr"; bad=1 }
   if (upgrade != 1 || resolved_stop != 1 || resolved_disable != 1) { print "ERROR: controles del sistema heredado no identificados" > "/dev/stderr"; bad=1 }
   if (resolv_rm != 1 || resolv_write != 1 || firewall_purge != 1) { print "ERROR: controles de red heredados no identificados" > "/dev/stderr"; bad=1 }
-  if (webmin != 1 || profile != 1 || badvpn != 1 || menu_slip != 1) { print "ERROR: bloques heredados esperados no identificados" > "/dev/stderr"; bad=1 }
+  if (webmin != 1 || profile != 1 || badvpn != 1 || menu_slip != 1 || region_check != 1) { print "ERROR: bloques heredados esperados no identificados" > "/dev/stderr"; bad=1 }
   if (slowdns != 1 || singbox != 1 || udp_binary != 1 || udp_config != 1 || zivpn != 1) { print "ERROR: descargas heredadas esperadas no identificadas" > "/dev/stderr"; bad=1 }
   if (bad) exit 42
 }
