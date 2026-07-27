@@ -43,8 +43,13 @@ transaction_begin slipstream-compat
 trap 'transaction_fail "$?" "$LINENO" "$BASH_COMMAND"' ERR INT TERM
 firewall_snapshot
 install_framework
-module_install slipstream
+if ! module_is_installed slowdns; then
+  module_install slowdns
+fi
+if ! module_is_installed slipstream; then
+  module_install slipstream
+fi
 transaction_commit
 trap - ERR INT TERM
 
-printf 'SlipStream instalado mediante el módulo mantenido.\n'
+printf 'SlipStream instalado mediante los módulos mantenidos de SlowDNS y SlipStream.\n'
