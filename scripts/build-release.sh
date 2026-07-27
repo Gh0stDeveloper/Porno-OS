@@ -12,12 +12,14 @@ VERSION="$(tr -d '\r\n' < "$VERSION_FILE")"
 }
 
 OUTPUT_DIR="${1:-$ROOT/dist}"
+mkdir -p "$OUTPUT_DIR"
+OUTPUT_DIR="$(cd -- "$OUTPUT_DIR" && pwd -P)"
 SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "$ROOT" log -1 --format=%ct 2>/dev/null || date +%s)}"
 PACKAGE_NAME="hextunnel-$VERSION"
 WORK="$(mktemp -d /tmp/hextunnel-release.XXXXXX)"
 trap 'rm -rf "${WORK:-}"' EXIT
 STAGE="$WORK/$PACKAGE_NAME"
-mkdir -p "$STAGE" "$OUTPUT_DIR"
+mkdir -p "$STAGE"
 
 copy_paths=(
   VERSION CHANGELOG.md README.md SECURITY.md
@@ -58,7 +60,10 @@ CHECKSUM="$ARCHIVE.sha256"
 )
 
 tar -tzf "$ARCHIVE" > "$SBOM"
-sha256sum "$ARCHIVE" > "$CHECKSUM"
+(
+  cd "$OUTPUT_DIR"
+  sha256sum "$(basename "$ARCHIVE")"
+) > "$CHECKSUM"
 chmod 644 "$ARCHIVE" "$SBOM" "$CHECKSUM"
 
 printf 'Versión: %s\n' "$VERSION"
