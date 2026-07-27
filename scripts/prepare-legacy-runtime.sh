@@ -32,7 +32,6 @@ function emit_header() {
 BEGIN {
   license=upgrade=resolved_stop=resolved_disable=resolv_rm=resolv_write=firewall_purge=0
   webmin=slowdns=singbox=badvpn=udp_binary=udp_config=zivpn=profile=menu_slip=0
-  perm_slowdns=perm_udp=perm_zivpn=perm_hysteria=perm_xray=0
   skip_webmin=skip_profile=skip_badvpn=skip_menu_slip=0
 }
 NR == 1 { print; emit_header(); next }
@@ -131,12 +130,18 @@ $0 == "MyVPS_Time=\047Africa/Accra\047" {
 $0 == "PermitRootLogin yes" { print "PermitRootLogin prohibit-password"; next }
 $0 == "X11Forwarding yes" { print "X11Forwarding no"; next }
 $0 == "LogLevel QUIET" { print "LogLevel INFO"; next }
-$0 == "chmod 666 /etc/slowdns/server.pub" { perm_slowdns++; print "chmod 644 /etc/slowdns/server.pub"; next }
-$0 == "chmod 666 /root/udp/config.json" { perm_udp++; print "chmod 600 /root/udp/config.json"; next }
-$0 == "chmod 666 /etc/zivpn/config.json" { perm_zivpn++; print "chmod 600 /etc/zivpn/config.json"; next }
-$0 == "chmod 644 /etc/hysteria/config.json" { perm_hysteria++; print "chmod 600 /etc/hysteria/config.json"; next }
+$0 == "chmod 666 /etc/slowdns/server.pub" { print "chmod 644 /etc/slowdns/server.pub"; next }
+$0 == "chmod 666 /root/udp/config.json" || $0 == "chmod 644 /root/udp/config.json" {
+  print "chmod 600 /root/udp/config.json"; next
+}
+$0 == "chmod 666 /etc/zivpn/config.json" || $0 == "chmod 644 /etc/zivpn/config.json" {
+  print "chmod 600 /etc/zivpn/config.json"; next
+}
+$0 == "chmod 644 /etc/hysteria/config.json" {
+  print "chmod 600 /etc/hysteria/config.json"; next
+}
 $0 ~ /^chmod 644 \/etc\/xray\/tcp_user\.txt \/etc\/xray\/tls_user\.txt \/etc\/xray\/ws_user\.txt \/etc\/xray\/xhttp_user\.txt \/etc\/xray\/httpupgrade_user\.txt$/ {
-  perm_xray++; print "chmod 600 /etc/xray/tcp_user.txt /etc/xray/tls_user.txt /etc/xray/ws_user.txt /etc/xray/xhttp_user.txt /etc/xray/httpupgrade_user.txt"; next
+  print "chmod 600 /etc/xray/tcp_user.txt /etc/xray/tls_user.txt /etc/xray/ws_user.txt /etc/xray/xhttp_user.txt /etc/xray/httpupgrade_user.txt"; next
 }
 $0 ~ /echo 1 > \/proc\/sys\/net\/ipv6\/conf\/all\/disable_ipv6/ {
   print "echo \"IPv6 se conserva para evitar cortar sesiones y rutas existentes.\""; next
@@ -183,7 +188,6 @@ END {
   if (resolv_rm != 1 || resolv_write != 1 || firewall_purge != 1) { print "ERROR: controles de red heredados no identificados" > "/dev/stderr"; bad=1 }
   if (webmin != 1 || profile != 1 || badvpn != 1 || menu_slip != 1) { print "ERROR: bloques heredados esperados no identificados" > "/dev/stderr"; bad=1 }
   if (slowdns != 1 || singbox != 1 || udp_binary != 1 || udp_config != 1 || zivpn != 1) { print "ERROR: descargas heredadas esperadas no identificadas" > "/dev/stderr"; bad=1 }
-  if (perm_slowdns != 1 || perm_udp != 1 || perm_zivpn != 1 || perm_hysteria != 1 || perm_xray != 1) { print "ERROR: permisos heredados esperados no identificados" > "/dev/stderr"; bad=1 }
   if (bad) exit 42
 }
 ' "$SOURCE" > "$OUTPUT"
@@ -201,7 +205,10 @@ for forbidden in \
   'ssl=0' \
   'raw.githubusercontent.com/.*/main/' \
   'sh.rustup.rs.*|.*sh' \
-  'dropbox.com/.*/badvpn'; do
+  'dropbox.com/.*/badvpn' \
+  'chmod 644 /root/udp/config.json' \
+  'chmod 644 /etc/zivpn/config.json' \
+  'chmod 644 /etc/hysteria/config.json'; do
   if grep -E "$forbidden" "$OUTPUT" >/dev/null; then
     printf 'ERROR: el runtime heredado conserva un patrón prohibido: %s\n' "$forbidden" >&2
     exit 1
