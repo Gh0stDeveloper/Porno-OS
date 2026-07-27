@@ -15,31 +15,17 @@ ROOT="${HEXTUNNEL_PRIVATE_PACKAGE_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}
 LEGACY_INSTALLER="$ROOT/legacy/install-all.sh"
 PREFLIGHT="$ROOT/bin/hextunnel-legacy-preflight"
 FINALIZER="$ROOT/bin/hextunnel-finalize-install"
+PREPARER="$ROOT/scripts/prepare-legacy-runtime.sh"
 [[ -f "$LEGACY_INSTALLER" ]] || private_install_error "No se encontró el instalador original completo."
-[[ -f "$PREFLIGHT" && -f "$FINALIZER" ]] || private_install_error "El paquete privado no contiene las fases de preflight y finalización."
+[[ -f "$PREFLIGHT" && -f "$FINALIZER" && -f "$PREPARER" ]] \
+  || private_install_error "El paquete privado no contiene las fases protegidas requeridas."
 
 export HEXTUNNEL_PACKAGE_ROOT="$ROOT"
 bash "$PREFLIGHT"
 
-validation_calls="$(grep -cE '^[[:space:]]*validar_key_hextunnel[[:space:]]*$' "$LEGACY_INSTALLER" || true)"
-[[ "$validation_calls" == 1 ]] \
-  || private_install_error "No se pudo identificar de forma segura la validación heredada."
-
 runtime_installer="$(mktemp /tmp/hextunnel-original.XXXXXX.sh)"
 trap 'rm -f "${runtime_installer:-}"' EXIT
-
-awk '
-  /^[[:space:]]*validar_key_hextunnel[[:space:]]*$/ {
-    print "if [[ \"${HEXTUNNEL_LICENSE_PREVALIDATED:-0}\" != \"1\" ]]; then"
-    print "  echo \"ERROR: la licencia segura no fue validada antes de ejecutar el instalador.\" >&2"
-    print "  exit 1"
-    print "fi"
-    print "echo \"Licencia validada de forma segura. Iniciando instalación completa...\""
-    next
-  }
-  { print }
-' "$LEGACY_INSTALLER" > "$runtime_installer"
-chmod 700 "$runtime_installer"
+bash "$PREPARER" "$LEGACY_INSTALLER" "$runtime_installer" licensed
 
 # La key ya quedó almacenada con permisos 600 para renovaciones y actualizaciones.
 unset HEXTUNNEL_LICENSE_KEY
