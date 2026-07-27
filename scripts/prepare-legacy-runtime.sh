@@ -210,7 +210,7 @@ for forbidden in \
   'chmod 666' \
   'ssl=0' \
   'raw.githubusercontent.com/.*/main/' \
-  'sh.rustup.rs.*|.*sh' \
+  'sh\.rustup\.rs[^|]*\|[[:space:]]*(ba)?sh' \
   'dropbox.com/.*/badvpn' \
   'chmod 644 /root/udp/config.json' \
   'chmod 644 /etc/zivpn/config.json' \
