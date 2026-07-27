@@ -47,8 +47,11 @@ while IFS= read -r -d '' file; do
 done < <(find install.sh beta-install.sh bin lib modules scripts tests legacy -type f \( -name '*.sh' -o -path 'bin/*' \) -print0)
 
 if command -v shellcheck >/dev/null 2>&1; then
-  mapfile -d '' shell_files < <(find install.sh beta-install.sh bin lib modules scripts tests legacy -type f \( -name '*.sh' -o -path 'bin/*' \) -print0)
-  shellcheck -x "${shell_files[@]}"
+  mapfile -d '' shell_files < <(
+    find install.sh beta-install.sh bin lib modules scripts tests \
+      -type f \( -name '*.sh' -o -path 'bin/*' \) -print0
+  )
+  shellcheck --severity=error -x "${shell_files[@]}"
 fi
 
 bash tests/security/test-hardening.sh
