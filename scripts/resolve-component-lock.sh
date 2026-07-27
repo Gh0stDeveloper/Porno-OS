@@ -43,6 +43,11 @@ release_asset() {
   printf '%s\t%s\n' "$url" "$actual"
 }
 
+emit_default() {
+  local name="$1" value="$2"
+  printf '%s="${%s:-%s}"\n' "$name" "$name" "$(printf '%q' "$value")"
+}
+
 fetch "$UDP_URL" "$WORK/udp-custom"
 UDP_SHA="$(sha256sum "$WORK/udp-custom" | awk '{print tolower($1)}')"
 fetch "$SLOWDNS_URL" "$WORK/sldns-server"
@@ -59,35 +64,32 @@ IFS=$'\t' read -r ZIVPN_URL ZIVPN_SHA < <(
     udp-zivpn-linux-amd64 "$WORK/zivpn"
 )
 
-cat > "$OUTPUT" <<EOF
-# Generado por scripts/resolve-component-lock.sh. No editar manualmente.
-# Los valores se incluyen en el paquete de release y pueden ser anulados por /etc/hextunnel/hextunnel.env.
-HEXTUNNEL_COMPONENT_LOCK_VERSION=1
-HEXTUNNEL_UDP_CUSTOM_REF=$(printf '%q' "$UDP_REF")
-HEXTUNNEL_UDP_CUSTOM_BINARY_URL=$(printf '%q' "$UDP_URL")
-HEXTUNNEL_UDP_CUSTOM_SHA256=$(printf '%q' "$UDP_SHA")
-HEXTUNNEL_SLOWDNS_REF=$(printf '%q' "$SLOWDNS_REF")
-HEXTUNNEL_SLOWDNS_BINARY_URL=$(printf '%q' "$SLOWDNS_URL")
-HEXTUNNEL_SLOWDNS_SHA256=$(printf '%q' "$SLOWDNS_SHA")
-HEXTUNNEL_BADVPN_REF=$(printf '%q' "$BADVPN_REF")
-HEXTUNNEL_BADVPN_SOURCE_URL=$(printf '%q' "$BADVPN_URL")
-HEXTUNNEL_BADVPN_SHA256=$(printf '%q' "$BADVPN_SHA")
-HEXTUNNEL_SINGBOX_VERSION=$(printf '%q' "$SINGBOX_VERSION")
-HEXTUNNEL_SINGBOX_BINARY_URL=$(printf '%q' "$SINGBOX_URL")
-HEXTUNNEL_SINGBOX_SHA256=$(printf '%q' "$SINGBOX_SHA")
-HEXTUNNEL_ZIVPN_VERSION=$(printf '%q' "$ZIVPN_VERSION")
-HEXTUNNEL_ZIVPN_BINARY_URL=$(printf '%q' "$ZIVPN_URL")
-HEXTUNNEL_ZIVPN_SHA256=$(printf '%q' "$ZIVPN_SHA")
-EOF
+{
+  printf '%s\n' '# Generado por scripts/resolve-component-lock.sh. No editar manualmente.'
+  printf '%s\n' '# Se carga como valores predeterminados; el entorno o /etc/hextunnel/hextunnel.env pueden anularlos.'
+  printf '%s\n' 'HEXTUNNEL_COMPONENT_LOCK_VERSION=1'
+  emit_default HEXTUNNEL_UDP_CUSTOM_REF "$UDP_REF"
+  emit_default HEXTUNNEL_UDP_CUSTOM_BINARY_URL "$UDP_URL"
+  emit_default HEXTUNNEL_UDP_CUSTOM_SHA256 "$UDP_SHA"
+  emit_default HEXTUNNEL_SLOWDNS_REF "$SLOWDNS_REF"
+  emit_default HEXTUNNEL_SLOWDNS_BINARY_URL "$SLOWDNS_URL"
+  emit_default HEXTUNNEL_SLOWDNS_SHA256 "$SLOWDNS_SHA"
+  emit_default HEXTUNNEL_BADVPN_REF "$BADVPN_REF"
+  emit_default HEXTUNNEL_BADVPN_SOURCE_URL "$BADVPN_URL"
+  emit_default HEXTUNNEL_BADVPN_SHA256 "$BADVPN_SHA"
+  emit_default HEXTUNNEL_SINGBOX_VERSION "$SINGBOX_VERSION"
+  emit_default HEXTUNNEL_SINGBOX_BINARY_URL "$SINGBOX_URL"
+  emit_default HEXTUNNEL_SINGBOX_SHA256 "$SINGBOX_SHA"
+  emit_default HEXTUNNEL_ZIVPN_VERSION "$ZIVPN_VERSION"
+  emit_default HEXTUNNEL_ZIVPN_BINARY_URL "$ZIVPN_URL"
+  emit_default HEXTUNNEL_ZIVPN_SHA256 "$ZIVPN_SHA"
+} > "$OUTPUT"
 chmod 600 "$OUTPUT"
 
-# Validación estructural sin ejecutar contenido arbitrario fuera del formato generado.
+bash -n "$OUTPUT"
 grep -Eq '^HEXTUNNEL_COMPONENT_LOCK_VERSION=1$' "$OUTPUT"
-for variable in \
-  HEXTUNNEL_UDP_CUSTOM_SHA256 HEXTUNNEL_SLOWDNS_SHA256 HEXTUNNEL_BADVPN_SHA256 \
-  HEXTUNNEL_SINGBOX_SHA256 HEXTUNNEL_ZIVPN_SHA256; do
-  value="$(sed -n "s/^${variable}=//p" "$OUTPUT")"
-  [[ "$value" =~ ^[0-9a-f]{64}$ ]] || { printf 'ERROR: lock inválido para %s\n' "$variable" >&2; exit 1; }
+for sha in "$UDP_SHA" "$SLOWDNS_SHA" "$BADVPN_SHA" "$SINGBOX_SHA" "$ZIVPN_SHA"; do
+  [[ "$sha" =~ ^[0-9a-f]{64}$ ]] || { printf 'ERROR: lock contiene SHA-256 inválido\n' >&2; exit 1; }
 done
 
 printf 'Component lock: %s\n' "$OUTPUT"
