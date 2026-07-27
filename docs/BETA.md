@@ -1,42 +1,42 @@
-# Hex Tunnel 1.0.0-beta.1
+# Hex Tunnel 1.0.0-rc.1 — prueba privada
 
-Esta beta permite probar el instalador original completo antes de desplegar el bot, la API de licencias y el servidor de distribución privada.
+Esta prueba permite validar en VPS reales el componente local completo antes de desplegar el bot, la API de licencias y el servidor privado.
 
 ## Alcance
 
-La beta está destinada exclusivamente a VPS de prueba administrados por el propietario del proyecto. No debe entregarse todavía como edición comercial ni instalarse en servidores con datos o servicios importantes.
+El código local se trata como release candidate con criterios de producción. La distribución mediante GitHub sigue siendo temporal y debe utilizarse únicamente en VPS de prueba administrados por el propietario.
 
-Sistemas objetivo:
+Plataformas soportadas:
 
 - Debian 12.
 - Ubuntu 22.04 LTS.
 - Ubuntu 24.04 LTS.
 - Arquitectura `x86_64`/`amd64`.
 
-## Separación respecto de producción
+## Separación respecto de la distribución final
 
-- `install.sh` conserva el flujo de producción: licencia HTTPS firmada y descarga privada.
-- `beta-install.sh` es un bootstrap separado que descarga un commit exacto desde GitHub.
-- La beta no acepta nombres de rama; exige el SHA completo de 40 caracteres.
+- `install.sh` conserva el flujo futuro de producción: licencia HTTPS firmada y descarga privada.
+- `beta-install.sh` es un canal de pruebas separado que descarga un commit exacto desde GitHub.
+- No se aceptan nombres de rama; se exige el SHA completo de 40 caracteres.
 - El usuario debe aceptar explícitamente el riesgo mediante `HEXTUNNEL_BETA_ACK=ACEPTO_BETA_PRIVADA`.
 - El instalador original se ejecuta automáticamente y abre `/usr/local/bin/menu` al terminar.
-- La consulta HTTP de licencia heredada se omite únicamente dentro del wrapper beta temporal.
+- La consulta HTTP de licencia heredada se omite únicamente dentro del wrapper temporal.
+- La versión instalada se toma del archivo `VERSION` del paquete.
 
 ## Preparación del VPS
 
-Antes de instalar:
-
 1. Crear un snapshot desde el panel del proveedor.
-2. Usar un VPS limpio sin paneles web, Apache, Nginx, VPN ni proxies preinstalados.
+2. Usar un VPS limpio sin Apache, Nginx, paneles, VPN ni proxies preinstalados.
 3. Confirmar acceso root por consola del proveedor además de SSH.
-4. Comprobar que los puertos necesarios no estén bloqueados por un firewall externo.
+4. Mantener abierta la sesión SSH actual.
+5. Comprobar que los puertos necesarios no estén bloqueados externamente.
 
 ## Instalación
 
-Reemplaza `<COMMIT_SHA_BETA>` por el commit exacto anunciado para la beta:
+Reemplaza `<COMMIT_SHA_RC>` por el commit exacto anunciado:
 
 ```bash
-BETA_SHA="<COMMIT_SHA_BETA>"
+BETA_SHA="<COMMIT_SHA_RC>"
 curl -fsSL "https://raw.githubusercontent.com/Gh0stDeveloper/Porno-OS/${BETA_SHA}/beta-install.sh" -o /tmp/hextunnel-beta-install.sh
 chmod 700 /tmp/hextunnel-beta-install.sh
 sudo HEXTUNNEL_BETA_ACK="ACEPTO_BETA_PRIVADA" \
@@ -44,11 +44,9 @@ sudo HEXTUNNEL_BETA_ACK="ACEPTO_BETA_PRIVADA" \
   /tmp/hextunnel-beta-install.sh
 ```
 
-No uses una rama como `main` o `feat/transactional-architecture` en `HEXTUNNEL_BETA_REF`. El bootstrap la rechazará.
+No uses `main` ni `feat/transactional-architecture` en `HEXTUNNEL_BETA_REF`.
 
-## Verificación no destructiva del paquete
-
-Antes de instalar en un VPS se puede confirmar que el commit existe, el TAR es seguro y contiene un único entrypoint beta:
+## Verificación no destructiva
 
 ```bash
 sudo HEXTUNNEL_BETA_ACK="ACEPTO_BETA_PRIVADA" \
@@ -57,27 +55,30 @@ sudo HEXTUNNEL_BETA_ACK="ACEPTO_BETA_PRIVADA" \
   /tmp/hextunnel-beta-install.sh
 ```
 
-Este modo descarga, inspecciona y elimina el paquete temporal. No ejecuta el instalador original ni modifica servicios.
+Este modo descarga, inspecciona y elimina el paquete temporal sin modificar servicios.
 
 ## Verificación posterior
 
-Después de instalar y antes de crear usuarios:
-
 ```bash
+sudo hextunnel version
+sudo hextunnel preflight
 sudo systemctl --failed
 sudo ss -lntup
+sudo hextunnel status
 sudo hextunnel doctor
+sudo hextunnel backup create
 sudo menu
 ```
 
-También debe verificarse:
+Debe comprobarse:
 
 - SSH accesible en 22 y 299.
 - Xray escuchando en sus puertos configurados.
 - Hysteria, Hysteria 2, UDP Custom y ZiVPN activos.
 - SlowDNS, SlipStream y DNSdist sin conflictos.
 - Stunnel, SSLH, Fail2ban, HAProxy y Dante activos cuando corresponda.
-- El menú permite crear, renovar, suspender y eliminar una cuenta de prueba.
+- Creación, renovación, suspensión y eliminación de una cuenta de prueba.
+- Respaldo creado y validado.
 
 ## Prueba de reinicio
 
@@ -85,47 +86,42 @@ También debe verificarse:
 sudo reboot
 ```
 
-Después del reinicio:
+Después:
 
 ```bash
 sudo systemctl --failed
+sudo hextunnel status
 sudo hextunnel doctor
 sudo menu
 ```
 
-No se debe considerar válido un VPS beta si pierde SSH, puertos, reglas NAT o servicios después de reiniciar.
+No se acepta un VPS si pierde SSH, puertos, NAT, firewall o servicios después del reinicio.
 
 ## Estado instalado
 
-El wrapper crea:
-
-```text
-/etc/hextunnel/beta-state.env
-```
-
-Contiene el canal, versión beta, commit exacto e instante de instalación. El archivo utiliza permisos `600`.
+El wrapper crea `/etc/hextunnel/beta-state.env` con canal `release-candidate`, versión, commit exacto e instante de instalación. El archivo utiliza permisos `600`.
 
 ## Reporte de errores
 
-Para cada incidencia se debe registrar:
+Registrar:
 
 - proveedor del VPS;
 - sistema operativo y versión;
-- commit beta;
+- commit exacto;
 - comando ejecutado;
-- paso exacto que falló;
+- paso que falló;
 - salida de `systemctl --failed`;
-- reporte generado por `sudo hextunnel doctor`;
-- si el fallo ocurre antes o después de reiniciar.
+- reporte de `sudo hextunnel doctor`;
+- comportamiento antes y después del reinicio.
 
-Nunca deben compartirse keys privadas, contraseñas de usuarios, tokens de Telegram ni archivos de claves TLS.
+Nunca deben compartirse contraseñas, tokens, claves privadas TLS ni respaldos sin cifrar.
 
-## Salida de la beta
+## Salida de la prueba privada
 
-La beta termina cuando estén validados, como mínimo, tres VPS limpios:
+Se requieren como mínimo tres VPS limpios:
 
-- uno con Debian 12;
-- uno con Ubuntu 22.04;
-- uno con Ubuntu 24.04.
+- Debian 12;
+- Ubuntu 22.04;
+- Ubuntu 24.04.
 
-Cada VPS debe completar instalación, creación de cuentas, conexiones reales, reinicio, persistencia, actualización y desinstalación o restauración del snapshot.
+Cada VPS debe completar instalación, cuentas, conexiones reales, reinicio, persistencia, respaldo, restauración controlada y desinstalación o restauración del snapshot.
