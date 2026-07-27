@@ -149,7 +149,7 @@ $0 ~ /echo 1 > \/proc\/sys\/net\/ipv6\/conf\/all\/disable_ipv6/ {
 $0 ~ /sysctl -w net\.ipv6\.conf\.all\.disable_ipv6=1/ {
   print ": # IPv6 preservado"; next
 }
-$0 ~ /echo \"nameserver DNS1\" > \/etc\/resolv\.conf/ {
+$0 ~ /echo "nameserver DNS1" > \/etc\/resolv\.conf/ {
   print ": # resolver preservado en el servicio de inicio"; next
 }
 $0 ~ /chmod 777 \/var\/run\/sslh\/sslh\.pid/ {
@@ -209,7 +209,7 @@ for forbidden in \
   'chmod 644 /root/udp/config.json' \
   'chmod 644 /etc/zivpn/config.json' \
   'chmod 644 /etc/hysteria/config.json'; do
-  if grep -E "$forbidden" "$OUTPUT" >/dev/null; then
+  if grep -En "$forbidden" "$OUTPUT" >&2; then
     printf 'ERROR: el runtime heredado conserva un patrón prohibido: %s\n' "$forbidden" >&2
     exit 1
   fi
