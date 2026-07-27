@@ -27,6 +27,7 @@ HEXTUNNEL_NO_REBOOT=1
 HEXTUNNEL_FORCE=0
 export HEXTUNNEL_DRY_RUN HEXTUNNEL_NON_INTERACTIVE HEXTUNNEL_NO_REBOOT HEXTUNNEL_FORCE
 
+module_validate legacy-all
 transaction_begin complete-installer-finalize
 trap 'transaction_fail "$?" "$LINENO" "$BASH_COMMAND"' ERR INT TERM
 install_framework
