@@ -1,5 +1,28 @@
 #!/usr/bin/env bash
 
+operation_lock_acquire() {
+  local label="${1:-operation}" lock_file
+  [[ "${HEXTUNNEL_OPERATION_LOCK_HELD:-0}" == 1 ]] && return 0
+  command_exists flock || die "flock es obligatorio para operaciones transaccionales."
+  ensure_dir 700 "$HEXTUNNEL_STATE"
+  lock_file="$HEXTUNNEL_STATE/operation.lock"
+  exec 8>>"$lock_file"
+  flock -n 8 || die "Otra operación de Hex Tunnel está en curso. Revisa $lock_file."
+  HEXTUNNEL_OPERATION_LOCK_HELD=1
+  export HEXTUNNEL_OPERATION_LOCK_HELD
+  printf 'pid=%s\noperation=%s\nstarted_at=%s\n' "$$" "$label" "$(date -Is)" > "$lock_file"
+  chmod 600 "$lock_file"
+}
+
+operation_lock_release() {
+  [[ "${HEXTUNNEL_OPERATION_LOCK_HELD:-0}" == 1 ]] || return 0
+  : > "$HEXTUNNEL_STATE/operation.lock" 2>/dev/null || true
+  flock -u 8 2>/dev/null || true
+  exec 8>&-
+  HEXTUNNEL_OPERATION_LOCK_HELD=0
+  export HEXTUNNEL_OPERATION_LOCK_HELD
+}
+
 transaction_status() {
   local dir="${1:-${HEXTUNNEL_TRANSACTION_DIR:-}}"
   [[ -n "$dir" && -f "$dir/status" ]] || {
@@ -11,9 +34,10 @@ transaction_status() {
 
 transaction_begin() {
   require_root
+  local label="${1:-change}" id
+  operation_lock_acquire "$label"
   ensure_dir 700 "$HEXTUNNEL_STATE"
   ensure_dir 700 "$HEXTUNNEL_STATE/transactions"
-  local label="${1:-change}" id
   id="$(date +%Y%m%d-%H%M%S)-$$-${label//[^A-Za-z0-9_.-]/_}"
   HEXTUNNEL_TRANSACTION_DIR="$HEXTUNNEL_STATE/transactions/$id"
   HEXTUNNEL_TRANSACTION_FAILING=0
@@ -86,7 +110,11 @@ restore_created_users() {
 
 rollback_transaction() {
   require_root
-  local id="${1:-}" dir status
+  local id="${1:-}" dir status acquired_here=0
+  if [[ "${HEXTUNNEL_OPERATION_LOCK_HELD:-0}" != 1 ]]; then
+    operation_lock_acquire rollback
+    acquired_here=1
+  fi
   if [[ -z "$id" ]]; then
     dir="$({ find "$HEXTUNNEL_STATE/transactions" -mindepth 1 -maxdepth 1 -type d 2>/dev/null || true; } | sort | tail -n1)"
   elif [[ "$id" == /* ]]; then
@@ -94,14 +122,19 @@ rollback_transaction() {
   else
     dir="$HEXTUNNEL_STATE/transactions/$id"
   fi
-  [[ -n "$dir" && -d "$dir" ]] || die "No se encontró la transacción solicitada."
+  [[ -n "$dir" && -d "$dir" ]] || {
+    ((acquired_here == 0)) || operation_lock_release
+    die "No se encontró la transacción solicitada."
+  }
 
   status="$(transaction_status "$dir")"
   if [[ "$status" == ROLLED_BACK ]]; then
     log_info "La transacción ya fue restaurada: $(basename "$dir")"
+    ((acquired_here == 0)) || operation_lock_release
     return 0
   fi
   if [[ "$status" == COMMITTED && "${HEXTUNNEL_FORCE:-0}" != 1 ]]; then
+    ((acquired_here == 0)) || operation_lock_release
     die "La transacción está confirmada; usa --force para restaurarla conscientemente."
   fi
 
@@ -112,6 +145,7 @@ rollback_transaction() {
   restore_created_users "$dir"
   printf '%s\n' ROLLED_BACK > "$dir/status"
   log_success "Rollback completado."
+  ((acquired_here == 0)) || operation_lock_release
 }
 
 transaction_fail() {
@@ -119,6 +153,7 @@ transaction_fail() {
   trap - ERR INT TERM
 
   if [[ "${HEXTUNNEL_TRANSACTION_FAILING:-0}" == 1 ]]; then
+    operation_lock_release
     exit "$code"
   fi
   HEXTUNNEL_TRANSACTION_FAILING=1
@@ -130,6 +165,7 @@ transaction_fail() {
     printf 'line=%s command=%s code=%s\n' "$line" "$command" "$code" > "$HEXTUNNEL_TRANSACTION_DIR/error"
     rollback_transaction "$HEXTUNNEL_TRANSACTION_DIR" || true
   fi
+  operation_lock_release
   exit "$code"
 }
 
@@ -143,4 +179,5 @@ transaction_commit() {
     ln -sfn "$HEXTUNNEL_TRANSACTION_DIR" "$HEXTUNNEL_STATE/last-successful"
   fi
   log_success "Transacción confirmada: $(basename "$HEXTUNNEL_TRANSACTION_DIR")"
+  operation_lock_release
 }
