@@ -27,13 +27,33 @@ HEXTUNNEL_NO_REBOOT=1
 HEXTUNNEL_FORCE=0
 export HEXTUNNEL_DRY_RUN HEXTUNNEL_NON_INTERACTIVE HEXTUNNEL_NO_REBOOT HEXTUNNEL_FORCE
 
+sshd -t || finalize_error "La configuración final de OpenSSH es inválida."
 module_validate legacy-all
+firewall_prepare_backend
 transaction_begin complete-installer-finalize
 trap 'transaction_fail "$?" "$LINENO" "$BASH_COMMAND"' ERR INT TERM
+firewall_snapshot
 install_framework
+
+if ! module_is_installed webmin; then
+  module_install webmin
+fi
+
+slipstream_domain="$(tr -d '\r\n' < /etc/deekayvpn/slipstream_domain.txt 2>/dev/null || true)"
+slowdns_ns="$(tr -d '\r\n' < /etc/deekayvpn/slowdns_ns.txt 2>/dev/null || true)"
+if [[ -n "$slipstream_domain" ]]; then
+  [[ -n "$slowdns_ns" ]] || finalize_error "No se encontró el Nameserver de SlowDNS para instalar SlipStream."
+  HEXTUNNEL_SLIPSTREAM_DOMAIN="$slipstream_domain"
+  HEXTUNNEL_SLOWDNS_NS="$slowdns_ns"
+  export HEXTUNNEL_SLIPSTREAM_DOMAIN HEXTUNNEL_SLOWDNS_NS
+  if ! module_is_installed slipstream; then
+    module_install slipstream
+  fi
+fi
+
 module_mark_installed legacy-all
 write_file "$HEXTUNNEL_ETC/install-mode.env" 600 <<EOF
-HEXTUNNEL_INSTALL_MODE=complete-legacy-panel
+HEXTUNNEL_INSTALL_MODE=complete-sanitized-panel
 HEXTUNNEL_VERSION=$(printf '%q' "$HEXTUNNEL_VERSION")
 HEXTUNNEL_RELEASE_CHANNEL=$(printf '%q' "$HEXTUNNEL_RELEASE_CHANNEL")
 HEXTUNNEL_FINALIZED_AT=$(printf '%q' "$(date -u +%Y-%m-%dT%H:%M:%SZ)")
