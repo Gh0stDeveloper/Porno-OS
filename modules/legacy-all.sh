@@ -22,7 +22,37 @@ udp 36717
 EOF
 }
 legacy_all_dependencies() { :; }
-legacy_all_install() { local script="$HEXTUNNEL_ROOT/legacy/install-all.sh"; [[ -x "$script" ]] || die "No se encontró el instalador original."; log_warn "El modo legacy conserva el comportamiento original y no puede ofrecer rollback completo."; confirm_action "¿Ejecutar el instalador original completo?" || die "Operación cancelada."; run_cmd bash "$script"; }
-legacy_all_uninstall() { die "El instalador heredado no dispone de desinstalación segura global."; }
-legacy_all_validate() { bash -n "$HEXTUNNEL_ROOT/legacy/install-all.sh"; }
-legacy_all_doctor() { printf 'compatibilidad: %s\n' "$HEXTUNNEL_ROOT/legacy/install-all.sh"; }
+legacy_all_install() {
+  local script="$HEXTUNNEL_ROOT/legacy/install-all.sh"
+  [[ -x "$script" ]] || die "No se encontró el instalador original."
+  log_warn "El modo completo conserva el panel original; usa snapshot del proveedor antes de instalar."
+  confirm_action "¿Ejecutar el instalador original completo?" || die "Operación cancelada."
+  run_cmd bash "$script"
+}
+legacy_all_uninstall() {
+  die "La instalación completa no admite purga global automática. Restaura el snapshot del proveedor o desinstala módulos mantenidos por separado."
+}
+legacy_all_service_active() {
+  local unit
+  for unit in "$@"; do
+    systemctl is-active --quiet "$unit" 2>/dev/null && return 0
+  done
+  return 1
+}
+legacy_all_validate() {
+  bash -n "$HEXTUNNEL_ROOT/legacy/install-all.sh"
+  [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] && return 0
+  [[ -x /usr/local/bin/menu ]] || die "El instalador completo no creó el menú."
+  legacy_all_service_active ssh sshd || die "SSH no quedó activo."
+  legacy_all_service_active xray || die "Xray no quedó activo."
+  legacy_all_service_active stunnel4 || die "Stunnel no quedó activo."
+}
+legacy_all_doctor() {
+  local failed=0 ssh_state=inactive xray_state=inactive stunnel_state=inactive menu_state=missing
+  [[ -x /usr/local/bin/menu ]] && menu_state=present || failed=1
+  legacy_all_service_active ssh sshd && ssh_state=active || failed=1
+  legacy_all_service_active xray && xray_state=active || failed=1
+  legacy_all_service_active stunnel4 && stunnel_state=active || failed=1
+  printf 'menu=%s ssh=%s xray=%s stunnel=%s\n' "$menu_state" "$ssh_state" "$xray_state" "$stunnel_state"
+  return "$failed"
+}
