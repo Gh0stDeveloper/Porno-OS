@@ -8,8 +8,12 @@ slowdns_ports() {
 slowdns_dependencies() { printf '%s\n' ssh; }
 
 slowdns_download_binary() {
-  local url="${HEXTUNNEL_SLOWDNS_BINARY_URL:-https://raw.githubusercontent.com/fisabiliyusri/SLDNS/main/slowdns/sldns-server}"
+  local ref="${HEXTUNNEL_SLOWDNS_REF:-b667b0d15be0589cd89cd2f997873296ceb07ce2}"
+  local default_url="https://raw.githubusercontent.com/fisabiliyusri/SLDNS/${ref}/slowdns/sldns-server"
+  local url="${HEXTUNNEL_SLOWDNS_BINARY_URL:-$default_url}"
   local expected="${HEXTUNNEL_SLOWDNS_SHA256:-}" tmp actual
+  [[ "$ref" =~ ^[0-9a-fA-F]{40}$ ]] || die "HEXTUNNEL_SLOWDNS_REF debe ser un commit completo."
+  [[ "$url" == https://* ]] || die "SlowDNS solo puede descargarse mediante HTTPS."
   tmp="$(mktemp /tmp/hextunnel-slowdns.XXXXXX)"
   run_cmd curl -fL --retry 3 -o "$tmp" "$url"
   [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] && { rm -f "$tmp"; return 0; }
@@ -18,7 +22,7 @@ slowdns_download_binary() {
     [[ "$actual" == "${expected,,}" ]] || { rm -f "$tmp"; die "El SHA-256 de SlowDNS no coincide."; }
   elif [[ "${HEXTUNNEL_ALLOW_UNVERIFIED_DOWNLOADS:-0}" != 1 ]]; then
     rm -f "$tmp"
-    die "Define HEXTUNNEL_SLOWDNS_SHA256 o habilita conscientemente HEXTUNNEL_ALLOW_UNVERIFIED_DOWNLOADS=1."
+    die "El paquete no contiene el SHA-256 bloqueado de SlowDNS."
   else
     log_warn "SlowDNS se instalará sin checksum configurado: $actual"
   fi
