@@ -19,11 +19,25 @@ required=(
   bin/hextunnel bin/hextunnel-account bin/hextunnel-backup bin/hextunnel-doctor
   bin/hextunnel-health bin/hextunnel-nat bin/hextunnel-update
   docs/ARCHITECTURE.md docs/BETA.md docs/OPERATIONS.md docs/RECOVERY.md
+  scripts/build-release.sh scripts/resolve-component-lock.sh
   SECURITY.md CHANGELOG.md VERSION
 )
 for path in "${required[@]}"; do
   [[ -s "$path" ]] || fail "falta archivo requerido: $path"
 done
+
+if [[ "${HEXTUNNEL_RELEASE_BUILD:-0}" == 1 ]]; then
+  [[ -s config/component-lock.env ]] || fail "falta config/component-lock.env para construir una release"
+  bash -n config/component-lock.env
+  grep -q '^HEXTUNNEL_COMPONENT_LOCK_VERSION=1$' config/component-lock.env \
+    || fail "component-lock.env es incompatible"
+  for variable in \
+    HEXTUNNEL_UDP_CUSTOM_SHA256 HEXTUNNEL_SLOWDNS_SHA256 HEXTUNNEL_BADVPN_SHA256 \
+    HEXTUNNEL_SINGBOX_SHA256 HEXTUNNEL_ZIVPN_SHA256; do
+    grep -Eq "^${variable}=.*[0-9a-f]{64}" config/component-lock.env \
+      || fail "falta SHA-256 bloqueado para $variable"
+  done
+fi
 
 while IFS= read -r -d '' file; do
   bash -n "$file"
@@ -49,5 +63,8 @@ ARCHIVE="$DIST/hextunnel-$VERSION.tar.gz"
 [[ -s "$ARCHIVE" && -s "$ARCHIVE.sha256" ]] || fail "no se generó el paquete de release"
 sha256sum -c "$ARCHIVE.sha256"
 tar -tzf "$ARCHIVE" | grep -q "hextunnel-$VERSION/RELEASE-MANIFEST.sha256"
+if [[ "${HEXTUNNEL_RELEASE_BUILD:-0}" == 1 ]]; then
+  tar -tzf "$ARCHIVE" | grep -q "hextunnel-$VERSION/config/component-lock.env"
+fi
 
 printf 'Production readiness: OK (%s)\n' "$VERSION"
