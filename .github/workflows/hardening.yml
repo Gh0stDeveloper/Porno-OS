@@ -13,4 +13,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: bash tests/security/test-hardening.sh
+      - name: Run hardening invariants
+        shell: bash
+        run: |
+          set -o pipefail
+          bash -x tests/security/test-hardening.sh 2>&1 | tee /tmp/hextunnel-hardening.log
+      - name: Upload hardening diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hardening-diagnostics-${{ github.run_id }}
+          path: /tmp/hextunnel-hardening.log
+          if-no-files-found: error
+          retention-days: 7
