@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+private_install_error() {
+  printf 'ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
+[[ "${EUID:-$(id -u)}" -eq 0 ]] || private_install_error "La instalación privada debe ejecutarse como root."
+[[ "${HEXTUNNEL_LICENSE_PREVALIDATED:-0}" == 1 ]] \
+  || private_install_error "El paquete privado solo puede ejecutarse después de validar la licencia."
+
+ROOT="${HEXTUNNEL_PRIVATE_PACKAGE_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)}"
+LEGACY_INSTALLER="$ROOT/legacy/install-all.sh"
+[[ -f "$LEGACY_INSTALLER" ]] || private_install_error "No se encontró el instalador original completo."
+
+validation_calls="$(grep -cE '^[[:space:]]*validar_key_hextunnel[[:space:]]*$' "$LEGACY_INSTALLER" || true)"
+[[ "$validation_calls" == 1 ]] \
+  || private_install_error "No se pudo identificar de forma segura la validación heredada."
+
+runtime_installer="$(mktemp /tmp/hextunnel-original.XXXXXX.sh)"
+trap 'rm -f "${runtime_installer:-}"' EXIT
+
+awk '
+  /^[[:space:]]*validar_key_hextunnel[[:space:]]*$/ {
+    print "if [[ \"${HEXTUNNEL_LICENSE_PREVALIDATED:-0}\" != \"1\" ]]; then"
+    print "  echo \"ERROR: la licencia segura no fue validada antes de ejecutar el instalador.\" >&2"
+    print "  exit 1"
+    print "fi"
+    print "echo \"Licencia validada de forma segura. Iniciando instalación completa...\""
+    next
+  }
+  { print }
+' "$LEGACY_INSTALLER" > "$runtime_installer"
+chmod 700 "$runtime_installer"
+
+# La key ya quedó almacenada con permisos 600 para renovaciones y actualizaciones.
+# El instalador heredado no necesita recibirla en su entorno.
+unset HEXTUNNEL_LICENSE_KEY
+export HEXTUNNEL_NO_REBOOT=1
+bash "$runtime_installer" "$@"
+
+trap - EXIT
+rm -f "$runtime_installer"
+
+if [[ -x /usr/local/bin/menu ]]; then
+  if [[ -t 0 && -t 1 ]]; then
+    exec /usr/local/bin/menu
+  fi
+  printf 'Instalación completada. Abre el panel con: sudo menu\n'
+  exit 0
+fi
+
+private_install_error "La instalación terminó, pero no se creó /usr/local/bin/menu."
