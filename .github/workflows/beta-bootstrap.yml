@@ -20,4 +20,4 @@ jobs:
             HEXTUNNEL_BETA_ACK=ACEPTO_BETA_PRIVADA \
             HEXTUNNEL_BETA_REF="$BETA_SOURCE_SHA" \
             HEXTUNNEL_BETA_VERIFY_ONLY=1 \
-            ./beta-install.sh
+            bash ./beta-install.sh
