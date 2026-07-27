@@ -22,6 +22,9 @@ on:
       - lib/framework.sh
       - .github/workflows/signed-update-integration.yml
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
