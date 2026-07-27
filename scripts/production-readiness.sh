@@ -20,8 +20,9 @@ required=(
   bin/hextunnel-health bin/hextunnel-nat bin/hextunnel-update
   bin/hextunnel-legacy-preflight bin/hextunnel-finalize-install
   bin/hextunnel-private-install bin/hextunnel-beta-install
+  bin/hextunnel-install-locked-component bin/hextunnel-slipstream-compat
   docs/ARCHITECTURE.md docs/BETA.md docs/OPERATIONS.md docs/RECOVERY.md
-  scripts/build-release.sh scripts/resolve-component-lock.sh
+  scripts/build-release.sh scripts/resolve-component-lock.sh scripts/prepare-legacy-runtime.sh
   SECURITY.md CHANGELOG.md VERSION
 )
 for path in "${required[@]}"; do
@@ -55,6 +56,7 @@ bash tests/security/test-current-tree.sh
 bash tests/unit/test-core.sh
 bash tests/unit/test-module-contract.sh
 bash tests/unit/test-production-operations.sh
+bash tests/unit/test-legacy-runtime.sh
 bash tests/integration/test-syntax.sh
 bash tests/integration/test-dry-run.sh
 
