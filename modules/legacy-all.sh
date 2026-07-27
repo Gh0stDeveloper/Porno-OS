@@ -35,7 +35,9 @@ legacy_all_uninstall() {
 legacy_all_service_active() {
   local unit
   for unit in "$@"; do
-    systemctl is-active --quiet "$unit" 2>/dev/null && return 0
+    if systemctl is-active --quiet "$unit" 2>/dev/null; then
+      return 0
+    fi
   done
   return 1
 }
@@ -49,10 +51,26 @@ legacy_all_validate() {
 }
 legacy_all_doctor() {
   local failed=0 ssh_state=inactive xray_state=inactive stunnel_state=inactive menu_state=missing
-  [[ -x /usr/local/bin/menu ]] && menu_state=present || failed=1
-  legacy_all_service_active ssh sshd && ssh_state=active || failed=1
-  legacy_all_service_active xray && xray_state=active || failed=1
-  legacy_all_service_active stunnel4 && stunnel_state=active || failed=1
+  if [[ -x /usr/local/bin/menu ]]; then
+    menu_state=present
+  else
+    failed=1
+  fi
+  if legacy_all_service_active ssh sshd; then
+    ssh_state=active
+  else
+    failed=1
+  fi
+  if legacy_all_service_active xray; then
+    xray_state=active
+  else
+    failed=1
+  fi
+  if legacy_all_service_active stunnel4; then
+    stunnel_state=active
+  else
+    failed=1
+  fi
   printf 'menu=%s ssh=%s xray=%s stunnel=%s\n' "$menu_state" "$ssh_state" "$xray_state" "$stunnel_state"
   return "$failed"
 }
