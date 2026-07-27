@@ -27,6 +27,11 @@ if grep -RIE --exclude='*.example' 'chmod[[:space:]]+755[^\n]*(\.key|key\.pem|se
   exit 1
 fi
 
+if grep -q 'codeload.github.com' install.sh; then
+  echo 'the public bootstrap must not download the project from GitHub before license authorization' >&2
+  exit 1
+fi
+
 grep -q "webmin_set_config_value ssl 1" modules/webmin.sh
 grep -q "install -m 640 -o root -g hextunnel-hysteria2" lib/accounts.sh
 grep -q "runuser -u hextunnel-slowdns -- test -r" modules/slowdns.sh
@@ -40,4 +45,13 @@ grep -q "write_file /etc/dnsdist/dnsdist.conf 644" modules/slipstream.sh
 grep -q "SuffixMatchNodeRule(slowdnsSuffixes)" modules/slipstream.sh
 grep -q "dnsdist -C /etc/dnsdist/dnsdist.conf --check-config" modules/slipstream.sh
 grep -q -- "--dns-listen-host 127.0.0.1 --dns-listen-port 5300" modules/slipstream.sh
+
+grep -q 'bootstrap_authorize_and_download' install.sh
+grep -q 'HEXTUNNEL_DISTRIBUTION_ENDPOINT' install.sh
+grep -q 'package_sha256' install.sh
+grep -q 'openssl dgst -sha256 -verify' install.sh
+grep -q 'HEXTUNNEL_LICENSE_PREVALIDATED=1' install.sh
+grep -q 'entrypoint="bin/hextunnel-private-install"' docs/PRIVATE_DISTRIBUTION.md
+grep -q 'validar_key_hextunnel' bin/hextunnel-private-install
+grep -q 'exec /usr/local/bin/menu' bin/hextunnel-private-install
 printf 'hardening invariants: ok\n'
