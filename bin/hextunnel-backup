@@ -50,6 +50,7 @@ backup_allowed_entry() {
   local entry="${1#./}" allowed
   entry="${entry%/}"
   [[ -n "$entry" ]] || return 0
+  [[ "$entry" != var/lib/hextunnel/operation.lock ]] || return 1
   while IFS= read -r allowed; do
     [[ "$entry" == "$allowed" || "$entry" == "$allowed/"* ]] && return 0
   done < <(backup_paths_list)
@@ -78,10 +79,10 @@ backup_verify_plain() {
 
 backup_materialize_plain() {
   local archive="$1" identity="$2" destination="$3"
+  backup_verify_checksum_if_present "$archive"
   if [[ "$archive" == *.age ]]; then
     command_exists age || die "Instala age para usar el respaldo cifrado."
     [[ -n "$identity" && -r "$identity" ]] || die "Indica --identity para descifrar el respaldo."
-    backup_verify_checksum_if_present "$archive"
     age -d -i "$identity" -o "$destination" "$archive"
   else
     cp -- "$archive" "$destination"
@@ -110,7 +111,9 @@ backup_create() {
   done < <(backup_paths_list)
   [[ -s "$manifest" ]] || die "No se encontraron rutas administradas para respaldar."
   archive="$work/backup.tar.gz"
-  tar --acls --xattrs --numeric-owner --one-file-system -C / -czf "$archive" -T "$manifest"
+  tar --acls --xattrs --numeric-owner --one-file-system \
+    --exclude=var/lib/hextunnel/operation.lock \
+    -C / -czf "$archive" -T "$manifest"
   backup_verify_plain "$archive"
   install -d -m 700 "$(dirname "$output")"
   if [[ -n "$recipient" ]]; then
@@ -172,14 +175,15 @@ backup_validate_staged_links() {
 }
 
 backup_restore_services() {
-  local service
+  local unit
   systemctl daemon-reload
-  for service in \
-    ssh sshd stunnel4 hextunnel-sslh xray hextunnel-xray-grpc hysteria1 hysteria2 \
-    udp-custom badvpn-udpgw slowdns slipstream-server dnsdist danted zivpn webmin \
-    fail2ban hextunnel-health.timer; do
-    systemctl list-unit-files "$service.service" >/dev/null 2>&1 || continue
-    systemctl try-restart "$service.service" >/dev/null 2>&1 || log_warn "No se pudo reiniciar $service"
+  for unit in \
+    ssh.service sshd.service stunnel4.service hextunnel-sslh.service xray.service \
+    hextunnel-xray-grpc.service hysteria1.service hysteria2.service udp-custom.service \
+    badvpn-udpgw.service slowdns.service slipstream-server.service dnsdist.service \
+    danted.service zivpn.service webmin.service fail2ban.service hextunnel-health.timer; do
+    systemctl list-unit-files "$unit" >/dev/null 2>&1 || continue
+    systemctl try-restart "$unit" >/dev/null 2>&1 || log_warn "No se pudo reiniciar $unit"
   done
 }
 
@@ -203,8 +207,10 @@ backup_restore() {
   command_exists flock || die "flock es obligatorio para restaurar."
   ensure_dir 700 "$HEXTUNNEL_STATE"
   lock_file="$HEXTUNNEL_STATE/operation.lock"
-  exec 9>"$lock_file"
+  exec 9>>"$lock_file"
   flock -n 9 || die "Otra operación de Hex Tunnel está en curso."
+  printf 'pid=%s\noperation=restore\nstarted_at=%s\n' "$$" "$(date -Is)" > "$lock_file"
+  chmod 600 "$lock_file"
 
   work="$(mktemp -d /tmp/hextunnel-restore.XXXXXX)"
   trap 'rm -rf "${work:-}"' RETURN
