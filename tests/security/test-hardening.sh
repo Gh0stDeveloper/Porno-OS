@@ -51,7 +51,7 @@ grep -q 'HEXTUNNEL_DISTRIBUTION_ENDPOINT' install.sh
 grep -q 'package_sha256' install.sh
 grep -q 'openssl dgst -sha256 -verify' install.sh
 grep -q 'HEXTUNNEL_LICENSE_PREVALIDATED=1' install.sh
-grep -q 'entrypoint="bin/hextunnel-private-install"' docs/PRIVATE_DISTRIBUTION.md
+grep -q '"entrypoint": "bin/hextunnel-private-install"' docs/PRIVATE_DISTRIBUTION.md
 grep -q 'validar_key_hextunnel' bin/hextunnel-private-install
 grep -q 'exec /usr/local/bin/menu' bin/hextunnel-private-install
 printf 'hardening invariants: ok\n'
