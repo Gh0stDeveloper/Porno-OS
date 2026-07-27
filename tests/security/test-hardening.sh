@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 cd "$ROOT"
-maintained=(install.sh beta-install.sh bin lib modules templates config)
+maintained=(install.sh beta-install.sh bin lib modules templates config scripts)
 
 reject() {
   local pattern="$1" message="$2"
@@ -22,7 +22,7 @@ reject 'PermitRootLogin[[:space:]]+yes' 'root password login must require an exp
 reject 'openssl[[:space:]]+rand[[:space:]]+[0-9]+[[:space:]]*>[^\n]*reset-seed' 'SlipStream reset seed must be encoded as hexadecimal text'
 reject 'QNameSuffixRule\(' 'dnsdist rules must remain compatible with supported LTS packages'
 
-if grep -RIE --exclude='*.example' 'chmod[[:space:]]+755[^\n]*(\.key|key\.pem|server\.key)' modules lib bin install.sh beta-install.sh; then
+if grep -RIE --exclude='*.example' 'chmod[[:space:]]+755[^\n]*(\.key|key\.pem|server\.key)' modules lib bin install.sh beta-install.sh scripts; then
   echo 'private key permissions cannot be executable/world-readable' >&2
   exit 1
 fi
@@ -66,4 +66,15 @@ grep -q 'HEXTUNNEL_BETA_SOURCE_SHA' bin/hextunnel-beta-install
 grep -q 'validar_key_hextunnel' bin/hextunnel-beta-install
 grep -q 'exec /usr/local/bin/menu' bin/hextunnel-beta-install
 grep -q '1.0.0-beta.1' docs/BETA.md
+
+grep -q '^1\.0\.0-rc\.1$' VERSION
+grep -q 'operation_lock_acquire' lib/rollback.sh
+grep -q 'flock -n 8' lib/rollback.sh
+grep -q 'hextunnel-backup restore' bin/hextunnel-backup
+grep -q -- '--confirm-host' bin/hextunnel-backup
+grep -q 'pre-restore-' bin/hextunnel-backup
+grep -q 'RELEASE-MANIFEST.sha256' scripts/build-release.sh
+grep -q 'Production readiness: OK' scripts/production-readiness.sh
+grep -q 'hextunnel-backup' lib/framework.sh
+grep -q '/etc/logrotate.d/hextunnel' lib/framework.sh
 printf 'hardening invariants: ok\n'
