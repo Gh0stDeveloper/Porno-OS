@@ -40,7 +40,8 @@ if grep -RIE 'raw\.githubusercontent\.com/.*/main/' modules config; then
   exit 1
 fi
 
-if grep -Eq '^[[:space:]]*HEXTUNNEL_(UDP_CUSTOM|SLOWDNS|BADVPN|SINGBOX|ZIVPN)_[A-Z0-9_]+=""' config/hextunnel.env.example; then
+component_override_pattern='^[[:space:]]*HEXTUNNEL_(UDP_CUSTOM_(REF|BINARY_URL|SHA256)|BADVPN_(REF|SOURCE_URL|SHA256)|SLOWDNS_(REF|BINARY_URL|SHA256)|SINGBOX_(VERSION|BINARY_URL|SHA256)|ZIVPN_(VERSION|BINARY_URL|SHA256))=""'
+if grep -Eq "$component_override_pattern" config/hextunnel.env.example; then
   echo 'empty component overrides must not erase release lock values' >&2
   exit 1
 fi
