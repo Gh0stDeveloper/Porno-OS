@@ -4,8 +4,10 @@ udp_custom_ports() { printf '%s\n' 'udp 36717'; }
 udp_custom_dependencies() { printf '%s\n' ssh; }
 
 udp_custom_default_asset() {
+  local ref="${HEXTUNNEL_UDP_CUSTOM_REF:-d7bb82abb6b36f1320bc349f36c0746b335a9ff9}"
+  [[ "$ref" =~ ^[0-9a-fA-F]{40}$ ]] || return 1
   case "${HEXTUNNEL_ARCH:-$(normalize_architecture)}" in
-    amd64) printf '%s' 'https://raw.githubusercontent.com/mahpud896/UDP-Custom/main/bin/udp-custom-linux-amd64' ;;
+    amd64) printf 'https://raw.githubusercontent.com/mahpud896/UDP-Custom/%s/bin/udp-custom-linux-amd64' "$ref" ;;
     *) return 1 ;;
   esac
 }
@@ -15,6 +17,7 @@ udp_custom_install_binary() {
   if [[ -z "$url" ]]; then
     url="$(udp_custom_default_asset)" || die "UDP Custom no publica un binario predeterminado para $HEXTUNNEL_ARCH; configura URL y SHA-256."
   fi
+  [[ "$url" == https://* ]] || die "UDP Custom solo puede descargarse mediante HTTPS."
   tmp="$(mktemp /tmp/hextunnel-udp-custom.XXXXXX)"
   run_cmd curl -fL --retry 3 -o "$tmp" "$url"
   [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] && { rm -f "$tmp"; return 0; }
@@ -23,7 +26,7 @@ udp_custom_install_binary() {
     [[ "$actual" == "${expected,,}" ]] || { rm -f "$tmp"; die "El SHA-256 de UDP Custom no coincide."; }
   elif [[ "${HEXTUNNEL_ALLOW_UNVERIFIED_DOWNLOADS:-0}" != 1 ]]; then
     rm -f "$tmp"
-    die "Define HEXTUNNEL_UDP_CUSTOM_SHA256 antes de instalar UDP Custom."
+    die "El paquete no contiene el SHA-256 bloqueado de UDP Custom."
   else
     log_warn "UDP Custom se instalará sin checksum configurado: $actual"
   fi
@@ -36,8 +39,9 @@ udp_custom_install_badvpn() {
   local ref="${HEXTUNNEL_BADVPN_REF:-1.999.130}"
   local url="${HEXTUNNEL_BADVPN_SOURCE_URL:-https://codeload.github.com/ambrop72/badvpn/tar.gz/refs/tags/$ref}"
   local expected="${HEXTUNNEL_BADVPN_SHA256:-}" work archive actual source build
+  [[ "$url" == https://* ]] || die "BadVPN solo puede descargarse mediante HTTPS."
   [[ -n "$expected" || "${HEXTUNNEL_ALLOW_UNVERIFIED_DOWNLOADS:-0}" == 1 ]] \
-    || die "Define HEXTUNNEL_BADVPN_SHA256 para compilar badvpn-udpgw."
+    || die "El paquete no contiene el SHA-256 bloqueado de BadVPN."
   work="$(mktemp -d /tmp/hextunnel-badvpn.XXXXXX)"
   archive="$work/source.tar.gz"
   run_cmd curl -fL --retry 3 -o "$archive" "$url"
