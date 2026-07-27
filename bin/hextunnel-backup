@@ -205,8 +205,8 @@ backup_restore() {
   [[ -n "$confirm_host" && "$confirm_host" == "$current_host" ]] \
     || die "Confirma el VPS con --confirm-host $current_host"
   command_exists flock || die "flock es obligatorio para restaurar."
-  ensure_dir 700 "$HEXTUNNEL_STATE"
-  lock_file="$HEXTUNNEL_STATE/operation.lock"
+  lock_file="$HEXTUNNEL_OPERATION_LOCK_FILE"
+  install -d -m 755 "$(dirname "$lock_file")"
   exec 9>>"$lock_file"
   flock -n 9 || die "Otra operación de Hex Tunnel está en curso."
   printf 'pid=%s\noperation=restore\nstarted_at=%s\n' "$$" "$(date -Is)" > "$lock_file"
