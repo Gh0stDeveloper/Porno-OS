@@ -1,38 +1,204 @@
 #!/usr/bin/env bash
 # Copyright (c) 2026 Hex Applications.
-# Manual transactional installer for Hex Tunnel.
+# Bootstrap privado y gestor transaccional de Hex Tunnel.
 set -Eeuo pipefail
 
-bootstrap_repository() {
-  local repository="${HEXTUNNEL_REPOSITORY:-JotchuaDevz/Porno-OS}"
-  local ref="${HEXTUNNEL_REF:-main}"
-  local archive tmp root
-  command -v curl >/dev/null 2>&1 || { echo "ERROR: curl es obligatorio." >&2; exit 1; }
-  command -v tar >/dev/null 2>&1 || { echo "ERROR: tar es obligatorio." >&2; exit 1; }
-  tmp="$(mktemp -d /tmp/hextunnel-bootstrap.XXXXXX)"
-  trap 'rm -rf "${tmp:-}"' EXIT
-  archive="$tmp/source.tar.gz"
-  curl -fL --retry 3 --connect-timeout 10 -o "$archive" \
-    "https://codeload.github.com/${repository}/tar.gz/${ref}"
-  if [[ -n "${HEXTUNNEL_BOOTSTRAP_SHA256:-}" ]]; then
-    printf '%s  %s\n' "$HEXTUNNEL_BOOTSTRAP_SHA256" "$archive" | sha256sum -c -
+bootstrap_error() {
+  printf 'ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
+bootstrap_require_root() {
+  [[ "${EUID:-$(id -u)}" -eq 0 ]] || bootstrap_error "Hex Tunnel debe ejecutarse como root."
+}
+
+bootstrap_install_dependencies() {
+  local command missing=0
+  for command in curl jq openssl tar sha256sum date; do
+    command -v "$command" >/dev/null 2>&1 || missing=1
+  done
+  ((missing == 0)) && return 0
+  command -v apt-get >/dev/null 2>&1 || bootstrap_error "Faltan dependencias y apt-get no está disponible."
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -y
+  apt-get install -y --no-install-recommends curl jq openssl ca-certificates tar coreutils
+}
+
+bootstrap_read_license_key() {
+  local key="${HEXTUNNEL_LICENSE_KEY:-}"
+  if [[ -z "$key" && -t 0 ]]; then
+    read -r -s -p "KEY: " key
+    printf '\n'
   fi
-  tar -xzf "$archive" -C "$tmp"
-  root="$(find "$tmp" -mindepth 1 -maxdepth 1 -type d | head -n1)"
-  [[ -n "$root" && -f "$root/lib/common.sh" ]] || {
-    echo "ERROR: el paquete descargado no contiene la arquitectura Hex Tunnel." >&2
-    exit 1
-  }
-  HEXTUNNEL_BOOTSTRAPPED=1 exec bash "$root/install.sh" "$@"
+  [[ -n "$key" ]] || bootstrap_error "No se proporcionó una key de licencia."
+  printf '%s' "$key"
+}
+
+bootstrap_prepare_public_key() {
+  local destination="$1"
+  local source_file="${HEXTUNNEL_LICENSE_PUBLIC_KEY:-}"
+  local source_url="${HEXTUNNEL_LICENSE_PUBLIC_KEY_URL:-}"
+  local expected_sha="${HEXTUNNEL_LICENSE_PUBLIC_KEY_SHA256:-}"
+
+  if [[ -n "${HEXTUNNEL_LICENSE_PUBLIC_KEY_PEM:-}" ]]; then
+    printf '%s\n' "$HEXTUNNEL_LICENSE_PUBLIC_KEY_PEM" > "$destination"
+  elif [[ -n "$source_file" && -s "$source_file" ]]; then
+    cp -- "$source_file" "$destination"
+  elif [[ -n "$source_url" ]]; then
+    [[ "$source_url" == https://* ]] || bootstrap_error "La clave pública solo puede descargarse mediante HTTPS."
+    [[ "$expected_sha" =~ ^[0-9a-fA-F]{64}$ ]] \
+      || bootstrap_error "HEXTUNNEL_LICENSE_PUBLIC_KEY_SHA256 debe contener 64 caracteres hexadecimales."
+    curl -fsSL --retry 2 --connect-timeout 8 --max-time 20 "$source_url" -o "$destination" \
+      || bootstrap_error "No se pudo descargar la clave pública de distribución."
+    printf '%s  %s\n' "${expected_sha,,}" "$destination" | sha256sum -c - >/dev/null \
+      || bootstrap_error "La clave pública descargada no coincide con el SHA-256 fijado."
+  else
+    bootstrap_error "Configura HEXTUNNEL_LICENSE_PUBLIC_KEY, HEXTUNNEL_LICENSE_PUBLIC_KEY_PEM o la URL y SHA-256 de la clave pública."
+  fi
+
+  openssl pkey -pubin -in "$destination" -noout >/dev/null 2>&1 \
+    || bootstrap_error "La clave pública de distribución no es válida."
+  chmod 600 "$destination"
+}
+
+bootstrap_canonical_authorization() {
+  local status="$1" expires_at="$2" download_expires_at="$3" nonce="$4"
+  local subject="$5" version="$6" download_url="$7" package_sha256="$8" entrypoint="$9"
+  printf 'status=%s\nexpires_at=%s\ndownload_expires_at=%s\nnonce=%s\nsubject=%s\nversion=%s\ndownload_url=%s\npackage_sha256=%s\nentrypoint=%s\n' \
+    "$status" "$expires_at" "$download_expires_at" "$nonce" "$subject" \
+    "$version" "$download_url" "$package_sha256" "$entrypoint"
+}
+
+bootstrap_validate_time() {
+  local value="$1" label="$2" epoch
+  epoch="$(date -d "$value" +%s 2>/dev/null)" || bootstrap_error "$label no contiene una fecha válida."
+  ((epoch > $(date -u +%s))) || bootstrap_error "$label ya expiró."
+}
+
+bootstrap_validate_archive_paths() {
+  local archive="$1"
+  if tar -tzf "$archive" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+    bootstrap_error "El paquete privado contiene rutas no seguras."
+  fi
+}
+
+bootstrap_authorize_and_download() {
+  local endpoint="${HEXTUNNEL_DISTRIBUTION_ENDPOINT:-${HEXTUNNEL_LICENSE_ENDPOINT:-}}"
+  local key public_ip nonce timestamp request response tmp public_key
+  local status expires_at download_expires_at response_nonce subject version
+  local download_url package_sha256 entrypoint signature reason archive extract_root
+  local signature_file payload_file entrypoint_file package_root
+  local -a entrypoint_matches=()
+
+  bootstrap_require_root
+  bootstrap_install_dependencies
+  [[ "$endpoint" == https://* ]] || bootstrap_error "Configura HEXTUNNEL_DISTRIBUTION_ENDPOINT con una URL HTTPS."
+
+  key="$(bootstrap_read_license_key)"
+  public_ip="$(curl -fsS --max-time 8 https://api.ipify.org)" \
+    || bootstrap_error "No se pudo determinar la IP pública del VPS."
+  nonce="$(openssl rand -hex 24)"
+  timestamp="$(date -u +%s)"
+  request="$(jq -n \
+    --arg key "$key" \
+    --arg ip "$public_ip" \
+    --arg nonce "$nonce" \
+    --argjson timestamp "$timestamp" \
+    '{key:$key,ip:$ip,nonce:$nonce,timestamp:$timestamp,product:"hextunnel",action:"install"}')"
+
+  printf 'Verificando licencia...\n'
+  response="$(curl -fsS --retry 2 --connect-timeout 8 --max-time 25 \
+    -H 'Content-Type: application/json' \
+    -H 'Cache-Control: no-store' \
+    --data-binary "$request" \
+    "$endpoint")" || bootstrap_error "El servidor de licencias no respondió correctamente."
+  jq empty <<< "$response" >/dev/null 2>&1 || bootstrap_error "El servidor devolvió una respuesta inválida."
+
+  status="$(jq -r '.status // empty' <<< "$response")"
+  reason="$(jq -r '.reason // empty' <<< "$response")"
+  [[ "$status" == valid ]] || bootstrap_error "${reason:-La key es inválida, está expirada o no puede activarse en este VPS.}"
+
+  expires_at="$(jq -r '.expires_at // empty' <<< "$response")"
+  download_expires_at="$(jq -r '.download_expires_at // empty' <<< "$response")"
+  response_nonce="$(jq -r '.nonce // empty' <<< "$response")"
+  subject="$(jq -r '.subject // empty' <<< "$response")"
+  version="$(jq -r '.version // empty' <<< "$response")"
+  download_url="$(jq -r '.download_url // empty' <<< "$response")"
+  package_sha256="$(jq -r '.package_sha256 // empty' <<< "$response")"
+  entrypoint="$(jq -r '.entrypoint // "bin/hextunnel-private-install"' <<< "$response")"
+  signature="$(jq -r '.signature // empty' <<< "$response")"
+
+  [[ "$response_nonce" == "$nonce" ]] || bootstrap_error "La autorización no corresponde a esta solicitud."
+  [[ "$subject" == "$public_ip" ]] || bootstrap_error "La autorización fue emitida para otro VPS."
+  [[ -n "$version" ]] || bootstrap_error "La autorización no incluye la versión del paquete."
+  [[ "$download_url" == https://* ]] || bootstrap_error "La URL privada de descarga debe usar HTTPS."
+  [[ "$package_sha256" =~ ^[0-9a-fA-F]{64}$ ]] || bootstrap_error "El SHA-256 del paquete privado es inválido."
+  [[ "$entrypoint" =~ ^[A-Za-z0-9._/-]+$ && "$entrypoint" != /* && "$entrypoint" != *".."* ]] \
+    || bootstrap_error "El entrypoint autorizado no es seguro."
+  [[ -n "$signature" ]] || bootstrap_error "La autorización no contiene firma criptográfica."
+  bootstrap_validate_time "$expires_at" "La licencia"
+  bootstrap_validate_time "$download_expires_at" "El enlace de descarga"
+
+  tmp="$(mktemp -d /tmp/hextunnel-private.XXXXXX)"
+  trap 'rm -rf "${tmp:-}"' EXIT
+  public_key="$tmp/license-public.pem"
+  payload_file="$tmp/authorization.payload"
+  signature_file="$tmp/authorization.sig"
+  archive="$tmp/hextunnel-private.tar.gz"
+  extract_root="$tmp/package"
+  mkdir -p "$extract_root"
+
+  bootstrap_prepare_public_key "$public_key"
+  bootstrap_canonical_authorization \
+    "$status" "$expires_at" "$download_expires_at" "$response_nonce" "$subject" \
+    "$version" "$download_url" "${package_sha256,,}" "$entrypoint" > "$payload_file"
+  printf '%s' "$signature" | base64 -d > "$signature_file" 2>/dev/null \
+    || bootstrap_error "La firma de autorización no usa Base64 válido."
+  openssl dgst -sha256 -verify "$public_key" -signature "$signature_file" "$payload_file" >/dev/null \
+    || bootstrap_error "La firma criptográfica de la autorización es inválida."
+
+  printf 'Licencia válida. Descargando paquete privado %s...\n' "$version"
+  curl -fsSL --retry 3 --connect-timeout 10 --max-time 300 "$download_url" -o "$archive" \
+    || bootstrap_error "No se pudo descargar el paquete privado autorizado."
+  printf '%s  %s\n' "${package_sha256,,}" "$archive" | sha256sum -c - >/dev/null \
+    || bootstrap_error "El paquete privado no coincide con el SHA-256 autorizado."
+  bootstrap_validate_archive_paths "$archive"
+  tar -xzf "$archive" -C "$extract_root"
+
+  if [[ -f "$extract_root/$entrypoint" ]]; then
+    entrypoint_file="$extract_root/$entrypoint"
+    package_root="$extract_root"
+  else
+    mapfile -t entrypoint_matches < <(find "$extract_root" -type f -path "*/$entrypoint" -print)
+    ((${#entrypoint_matches[@]} == 1)) \
+      || bootstrap_error "El paquete privado no contiene un entrypoint único: $entrypoint"
+    entrypoint_file="${entrypoint_matches[0]}"
+    package_root="${entrypoint_file%/$entrypoint}"
+  fi
+  chmod 700 "$entrypoint_file"
+
+  install -d -m 700 /etc/hextunnel
+  printf '%s\n' "$key" > /etc/hextunnel/license.key
+  chmod 600 /etc/hextunnel/license.key
+  cat > /etc/hextunnel/license-state.env <<EOF
+HEXTUNNEL_LICENSE_EXPIRES_AT=$(printf '%q' "$expires_at")
+HEXTUNNEL_LICENSE_SUBJECT=$(printf '%q' "$subject")
+HEXTUNNEL_INSTALLED_VERSION=$(printf '%q' "$version")
+EOF
+  chmod 600 /etc/hextunnel/license-state.env
+
+  export HEXTUNNEL_LICENSE_KEY="$key"
+  export HEXTUNNEL_LICENSE_PREVALIDATED=1
+  export HEXTUNNEL_LICENSE_EXPIRES_AT="$expires_at"
+  export HEXTUNNEL_LICENSE_SUBJECT="$subject"
+  export HEXTUNNEL_PRIVATE_PACKAGE_ROOT="$package_root"
+  export HEXTUNNEL_NO_REBOOT="${HEXTUNNEL_NO_REBOOT:-1}"
+  exec bash "$entrypoint_file" "$@"
 }
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
 if [[ -z "$SCRIPT_DIR" || ! -f "$SCRIPT_DIR/lib/common.sh" ]]; then
-  [[ "${HEXTUNNEL_BOOTSTRAPPED:-0}" == 1 ]] && {
-    echo "ERROR: no se pudieron cargar los módulos del instalador." >&2
-    exit 1
-  }
-  bootstrap_repository "$@"
+  bootstrap_authorize_and_download "$@"
 fi
 
 source "$SCRIPT_DIR/lib/common.sh"
