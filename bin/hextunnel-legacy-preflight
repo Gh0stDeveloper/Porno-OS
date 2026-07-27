@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+ROOT="${HEXTUNNEL_PACKAGE_ROOT:-${HEXTUNNEL_PRIVATE_PACKAGE_ROOT:-${HEXTUNNEL_BETA_PACKAGE_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)}}}"
+[[ -f "$ROOT/lib/common.sh" ]] || { echo "ERROR: paquete Hex Tunnel incompleto." >&2; exit 1; }
+
+for file in common logging backup rollback systemd firewall nat secrets validation modules; do
+  # shellcheck disable=SC1090
+  source "$ROOT/lib/$file.sh"
+done
+
+init_logging
+load_runtime_config
+load_hextunnel_secrets
+load_module_registry
+
+HEXTUNNEL_FORCE="${HEXTUNNEL_FORCE:-0}"
+export HEXTUNNEL_FORCE
+preflight_all legacy-all
+printf 'Preflight del instalador completo: correcto.\n'
