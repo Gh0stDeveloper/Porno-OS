@@ -22,6 +22,7 @@ jobs:
             detect --no-git --source=/repo --redact --exit-code=1 \
             --report-format=json --report-path=/repo/gitleaks-report.json
           code=$?
+          [[ -s gitleaks-report.json ]] || printf '[]\n' > gitleaks-report.json
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           exit 0
       - name: Upload Gitleaks report
