@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 cd "$ROOT"
-maintained=(install.sh bin lib modules templates config)
+maintained=(install.sh beta-install.sh bin lib modules templates config)
 
 reject() {
   local pattern="$1" message="$2"
@@ -22,13 +22,13 @@ reject 'PermitRootLogin[[:space:]]+yes' 'root password login must require an exp
 reject 'openssl[[:space:]]+rand[[:space:]]+[0-9]+[[:space:]]*>[^\n]*reset-seed' 'SlipStream reset seed must be encoded as hexadecimal text'
 reject 'QNameSuffixRule\(' 'dnsdist rules must remain compatible with supported LTS packages'
 
-if grep -RIE --exclude='*.example' 'chmod[[:space:]]+755[^\n]*(\.key|key\.pem|server\.key)' modules lib bin install.sh; then
+if grep -RIE --exclude='*.example' 'chmod[[:space:]]+755[^\n]*(\.key|key\.pem|server\.key)' modules lib bin install.sh beta-install.sh; then
   echo 'private key permissions cannot be executable/world-readable' >&2
   exit 1
 fi
 
 if grep -q 'codeload.github.com' install.sh; then
-  echo 'the public bootstrap must not download the project from GitHub before license authorization' >&2
+  echo 'the production bootstrap must not download the project from GitHub before license authorization' >&2
   exit 1
 fi
 
@@ -54,4 +54,16 @@ grep -q 'HEXTUNNEL_LICENSE_PREVALIDATED=1' install.sh
 grep -q '"entrypoint": "bin/hextunnel-private-install"' docs/PRIVATE_DISTRIBUTION.md
 grep -q 'validar_key_hextunnel' bin/hextunnel-private-install
 grep -q 'exec /usr/local/bin/menu' bin/hextunnel-private-install
+
+grep -q 'HEXTUNNEL_BETA_ACK' beta-install.sh
+grep -q 'ACEPTO_BETA_PRIVADA' beta-install.sh
+grep -q 'HEXTUNNEL_BETA_REF' beta-install.sh
+grep -q '\^\[0-9a-fA-F\]{40}\$' beta-install.sh
+grep -q 'Gh0stDeveloper/Porno-OS' beta-install.sh
+grep -q 'HEXTUNNEL_BETA_MODE=1' beta-install.sh
+grep -q 'HEXTUNNEL_BETA_MODE' bin/hextunnel-beta-install
+grep -q 'HEXTUNNEL_BETA_SOURCE_SHA' bin/hextunnel-beta-install
+grep -q 'validar_key_hextunnel' bin/hextunnel-beta-install
+grep -q 'exec /usr/local/bin/menu' bin/hextunnel-beta-install
+grep -q '1.0.0-beta.1' docs/BETA.md
 printf 'hardening invariants: ok\n'
