@@ -3,6 +3,9 @@ on:
   push:
     branches: ['feat/**', 'fix/**', 'main']
   pull_request:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -16,5 +19,9 @@ jobs:
         run: bash tests/unit/test-core.sh
       - name: Test module contracts
         run: bash tests/unit/test-module-contract.sh
+      - name: Test production operations
+        run: bash tests/unit/test-production-operations.sh
+      - name: Test sanitized complete installer
+        run: bash tests/unit/test-legacy-runtime.sh
       - name: Test current tree security invariants
         run: bash tests/security/test-current-tree.sh
