@@ -131,10 +131,10 @@ $0 == "PermitRootLogin yes" { print "PermitRootLogin prohibit-password"; next }
 $0 == "X11Forwarding yes" { print "X11Forwarding no"; next }
 $0 == "LogLevel QUIET" { print "LogLevel INFO"; next }
 $0 == "chmod 666 /etc/slowdns/server.pub" { print "chmod 644 /etc/slowdns/server.pub"; next }
-$0 == "chmod 666 /root/udp/config.json" || $0 == "chmod 644 /root/udp/config.json" {
+$0 ~ /^[[:space:]]*chmod (644|666) \/root\/udp\/config\.json([[:space:]]|$)/ {
   print "chmod 600 /root/udp/config.json"; next
 }
-$0 == "chmod 666 /etc/zivpn/config.json" || $0 == "chmod 644 /etc/zivpn/config.json" {
+$0 ~ /^[[:space:]]*chmod (644|666) \/etc\/zivpn\/config\.json([[:space:]]|$)/ {
   print "chmod 600 /etc/zivpn/config.json"; next
 }
 $0 == "chmod 644 /etc/hysteria/config.json" {
