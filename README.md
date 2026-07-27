@@ -1,29 +1,60 @@
-# Hex Tunnel Script
+# Hex Tunnel
 
-Arquitectura transaccional y modular para instalar y administrar SSH, Xray, Hysteria, Hysteria 2, UDP Custom, SlowDNS, SlipStream, ZiVPN y Webmin en Debian/Ubuntu.
-
-El instalador original completo se conserva en `legacy/install-all.sh`. El nuevo sistema no depende de scripts Python: `install.sh` carga bibliotecas y módulos Bash mantenidos manualmente.
+Instalador transaccional y modular para administrar SSH/TLS, Xray, Hysteria v1, Hysteria 2, UDP Custom, SlowDNS, SlipStream, ZiVPN y Webmin en Debian y Ubuntu.
 
 ## Estado
 
-- Canal actual: `1.0.0-beta.1`.
-- Objetivo: beta privada en VPS limpios administrados por el propietario.
-- Sistemas validados por CI: Debian 12, Ubuntu 22.04 LTS y Ubuntu 24.04 LTS.
-- Producción: pendiente del bot, API de licencias y servidor privado de distribución.
+- Versión: `1.0.0-rc.1`.
+- Estado del componente local: release candidate con criterios de producción.
+- Uso inmediato: pruebas controladas en VPS reales.
+- Plataformas soportadas: Debian 12, Ubuntu 22.04 LTS y Ubuntu 24.04 LTS sobre amd64.
+- Fuera de este alcance: bot de Telegram, API de licencias y servidor privado de distribución.
 
-## Beta privada
+La ausencia temporal del bot y del servidor no impide validar el instalador, los módulos, las cuentas, el menú, el rollback, los respaldos ni la persistencia tras reinicio.
 
-La beta usa un bootstrap separado, exige un commit exacto y ejecuta automáticamente el instalador original completo. No modifica ni debilita el flujo protegido de `install.sh`.
+## Capacidades
 
-Consulta [`docs/BETA.md`](docs/BETA.md) antes de instalar. Debe utilizarse únicamente en VPS de prueba con snapshot y acceso a la consola del proveedor.
+- Instalación, validación y desinstalación por módulo.
+- Transacciones con respaldo y rollback automático.
+- Bloqueo contra operaciones administrativas simultáneas.
+- Firewall y NAT reversibles.
+- Gestión de cuentas y expiraciones.
+- Diagnóstico sanitizado y auditoría periódica mediante systemd.
+- Respaldo, verificación, cifrado opcional y restauración.
+- Actualizaciones mediante manifiestos firmados y SHA-256.
+- Paquetes de release reproducibles con manifiesto interno.
+- Instalador original completo conservado en `legacy/install-all.sh`.
 
-## Distribución de producción
+## Comandos instalados
 
-Cuando se ejecuta como archivo público aislado, `install.sh` valida primero la licencia mediante HTTPS y firma criptográfica. Solo después de autorizar descarga el paquete privado y ejecuta el instalador completo. Este flujo requiere que el servidor de licencias y distribución esté desplegado.
+```bash
+sudo hextunnel version
+sudo hextunnel preflight
+sudo hextunnel status
+sudo hextunnel doctor
+sudo hextunnel account --help
+sudo hextunnel backup --help
+sudo hextunnel update check
+sudo hextunnel rollback <ID>
+sudo menu
+```
 
-Consulta [`docs/PRIVATE_DISTRIBUTION.md`](docs/PRIVATE_DISTRIBUTION.md).
+## Prueba privada
 
-## Uso del árbol completo
+El bootstrap de prueba exige un SHA completo de commit, aceptación explícita y un VPS limpio con snapshot. Consulta [`docs/BETA.md`](docs/BETA.md).
+
+## Operación y recuperación
+
+- [`docs/OPERATIONS.md`](docs/OPERATIONS.md)
+- [`docs/RECOVERY.md`](docs/RECOVERY.md)
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- [`SECURITY.md`](SECURITY.md)
+
+## Distribución futura
+
+`install.sh`, cuando se usa como bootstrap público aislado, está preparado para validar una licencia HTTPS firmada y descargar después un paquete privado autorizado. El contrato se documenta en [`docs/PRIVATE_DISTRIBUTION.md`](docs/PRIVATE_DISTRIBUTION.md). Esa integración se activará cuando se desarrollen el bot y el servidor.
+
+## Desarrollo local
 
 ```bash
 sudo ./install.sh
@@ -32,8 +63,8 @@ sudo ./install.sh uninstall xray
 sudo ./install.sh doctor
 sudo ./install.sh rollback
 sudo ./install.sh legacy
+bash scripts/production-readiness.sh
+bash scripts/build-release.sh dist
 ```
-
-Las credenciales de Telegram se cargan desde `/etc/hextunnel/secrets.env` o mediante `HEXTUNNEL_TELEGRAM_CHAT_ID` y `HEXTUNNEL_TELEGRAM_BOT_TOKEN`. Las variables siguen disponibles para todas las funciones del sistema, pero los valores reales no se publican.
 
 Cada operación modular crea una transacción en `/var/lib/hextunnel/transactions`, respalda archivos, firewall y estados de systemd, valida configuraciones y revierte los cambios cuando falla un paso.
