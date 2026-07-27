@@ -61,7 +61,13 @@ bash tests/unit/test-module-contract.sh
 bash tests/unit/test-production-operations.sh
 bash tests/unit/test-legacy-runtime.sh
 bash tests/integration/test-syntax.sh
-bash tests/integration/test-dry-run.sh
+if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+  bash tests/integration/test-dry-run.sh
+elif command -v sudo >/dev/null 2>&1; then
+  sudo -E bash tests/integration/test-dry-run.sh
+else
+  fail "test-dry-run requiere root o sudo"
+fi
 
 DIST="$(mktemp -d /tmp/hextunnel-release-gate.XXXXXX)"
 trap 'rm -rf "${DIST:-}"' EXIT
