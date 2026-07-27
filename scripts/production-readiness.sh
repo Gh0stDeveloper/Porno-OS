@@ -84,9 +84,13 @@ ARCHIVE="$DIST/hextunnel-$VERSION.tar.gz"
   cd "$DIST"
   sha256sum -c "$(basename "$ARCHIVE.sha256")"
 )
-tar -tzf "$ARCHIVE" | grep -q "hextunnel-$VERSION/RELEASE-MANIFEST.sha256"
+archive_listing="$DIST/hextunnel-$VERSION.archive-list.txt"
+tar -tzf "$ARCHIVE" > "$archive_listing"
+grep -Fqx "hextunnel-$VERSION/RELEASE-MANIFEST.sha256" "$archive_listing" \
+  || fail "el paquete no contiene RELEASE-MANIFEST.sha256"
 if [[ "${HEXTUNNEL_RELEASE_BUILD:-0}" == 1 ]]; then
-  tar -tzf "$ARCHIVE" | grep -q "hextunnel-$VERSION/config/component-lock.env"
+  grep -Fqx "hextunnel-$VERSION/config/component-lock.env" "$archive_listing" \
+    || fail "el paquete no contiene config/component-lock.env"
 fi
 
 printf 'Production readiness: OK (%s)\n' "$VERSION"
