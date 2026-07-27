@@ -46,6 +46,9 @@ if [[ -n "$slipstream_domain" ]]; then
   HEXTUNNEL_SLIPSTREAM_DOMAIN="$slipstream_domain"
   HEXTUNNEL_SLOWDNS_NS="$slowdns_ns"
   export HEXTUNNEL_SLIPSTREAM_DOMAIN HEXTUNNEL_SLOWDNS_NS
+  if ! module_is_installed slowdns; then
+    module_install slowdns
+  fi
   if ! module_is_installed slipstream; then
     module_install slipstream
   fi
