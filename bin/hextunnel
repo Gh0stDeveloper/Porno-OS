@@ -148,7 +148,6 @@ doctor() {
     echo
     echo "Módulos administrados:"
     for module in "${HEXTUNNEL_AVAILABLE_MODULES[@]}"; do
-      [[ "$module" == legacy-all ]] && continue
       module_is_installed "$module" || continue
       checked=$((checked + 1))
       printf '[%s] ' "$module"
@@ -221,11 +220,10 @@ case "${1:-help}" in
     ;;
   status)
     for module in "${HEXTUNNEL_AVAILABLE_MODULES[@]}"; do
-      [[ "$module" == legacy-all ]] && continue
       if module_is_installed "$module"; then
         printf '%-14s ' "$module"
         module_doctor "$module" || true
-      else
+      elif [[ "$module" != legacy-all ]]; then
         printf '%-14s not-installed\n' "$module"
       fi
     done
