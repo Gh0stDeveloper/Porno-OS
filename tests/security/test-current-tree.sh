@@ -7,7 +7,7 @@ if grep -RIE --exclude-dir=.git --exclude='*.example' --exclude='test-current-tr
   echo 'Telegram token embedded in current tree' >&2
   exit 1
 fi
-if grep -RIE --exclude-dir=.git --exclude='test-current-tree.sh' \
+if grep -RIE --exclude-dir=.git --exclude='test-current-tree.sh' -- \
   '-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----' .; then
   echo 'Private key embedded in current tree' >&2
   exit 1
