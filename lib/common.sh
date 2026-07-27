@@ -8,6 +8,7 @@ HEXTUNNEL_STATE="${HEXTUNNEL_STATE:-/var/lib/hextunnel}"
 HEXTUNNEL_LOG_DIR="${HEXTUNNEL_LOG_DIR:-/var/log/hextunnel}"
 HEXTUNNEL_INSTALL_DIR="${HEXTUNNEL_INSTALL_DIR:-/opt/hextunnel}"
 HEXTUNNEL_CONFIG_FILE="${HEXTUNNEL_CONFIG_FILE:-$HEXTUNNEL_ETC/hextunnel.env}"
+HEXTUNNEL_COMPONENT_LOCK_FILE="${HEXTUNNEL_COMPONENT_LOCK_FILE:-$HEXTUNNEL_ROOT/config/component-lock.env}"
 HEXTUNNEL_VERSION_FILE="${HEXTUNNEL_VERSION_FILE:-$HEXTUNNEL_ROOT/VERSION}"
 if [[ -s "$HEXTUNNEL_VERSION_FILE" ]]; then
   HEXTUNNEL_VERSION="${HEXTUNNEL_VERSION:-$(tr -d '\r\n' < "$HEXTUNNEL_VERSION_FILE")}"
@@ -93,6 +94,12 @@ validate_private_env_file() {
 
 load_runtime_config() {
   ensure_dir 700 "$HEXTUNNEL_ETC"
+  if [[ -f "$HEXTUNNEL_COMPONENT_LOCK_FILE" ]]; then
+    validate_private_env_file "$HEXTUNNEL_COMPONENT_LOCK_FILE"
+    # shellcheck disable=SC1090
+    source "$HEXTUNNEL_COMPONENT_LOCK_FILE"
+    [[ "${HEXTUNNEL_COMPONENT_LOCK_VERSION:-}" == 1 ]] || die "El lockfile de componentes es incompatible."
+  fi
   if [[ -f "$HEXTUNNEL_CONFIG_FILE" ]]; then
     validate_private_env_file "$HEXTUNNEL_CONFIG_FILE"
     # shellcheck disable=SC1090
