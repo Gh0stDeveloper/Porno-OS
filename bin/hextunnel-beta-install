@@ -17,9 +17,11 @@ ROOT="${HEXTUNNEL_BETA_PACKAGE_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/
 LEGACY_INSTALLER="$ROOT/legacy/install-all.sh"
 PREFLIGHT="$ROOT/bin/hextunnel-legacy-preflight"
 FINALIZER="$ROOT/bin/hextunnel-finalize-install"
+PREPARER="$ROOT/scripts/prepare-legacy-runtime.sh"
 VERSION_FILE="$ROOT/VERSION"
 [[ -f "$LEGACY_INSTALLER" ]] || beta_install_error "No se encontró el instalador original completo."
-[[ -f "$PREFLIGHT" && -f "$FINALIZER" ]] || beta_install_error "El paquete beta no contiene las fases de preflight y finalización."
+[[ -f "$PREFLIGHT" && -f "$FINALIZER" && -f "$PREPARER" ]] \
+  || beta_install_error "El paquete beta no contiene las fases protegidas requeridas."
 [[ -s "$VERSION_FILE" ]] || beta_install_error "El paquete no contiene VERSION."
 VERSION="$(tr -d '\r\n' < "$VERSION_FILE")"
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] \
@@ -28,25 +30,9 @@ VERSION="$(tr -d '\r\n' < "$VERSION_FILE")"
 export HEXTUNNEL_PACKAGE_ROOT="$ROOT"
 bash "$PREFLIGHT"
 
-validation_calls="$(grep -cE '^[[:space:]]*validar_key_hextunnel[[:space:]]*$' "$LEGACY_INSTALLER" || true)"
-[[ "$validation_calls" == 1 ]] \
-  || beta_install_error "No se pudo identificar de forma segura la validación heredada."
-
 runtime_installer="$(mktemp /tmp/hextunnel-beta-original.XXXXXX.sh)"
 trap 'rm -f "${runtime_installer:-}"' EXIT
-
-awk '
-  /^[[:space:]]*validar_key_hextunnel[[:space:]]*$/ {
-    print "if [[ \"${HEXTUNNEL_BETA_MODE:-0}\" != \"1\" ]]; then"
-    print "  echo \"ERROR: el modo beta no fue autorizado por el bootstrap.\" >&2"
-    print "  exit 1"
-    print "fi"
-    print "echo \"Modo beta privado autorizado. Iniciando instalación completa...\""
-    next
-  }
-  { print }
-' "$LEGACY_INSTALLER" > "$runtime_installer"
-chmod 700 "$runtime_installer"
+bash "$PREPARER" "$LEGACY_INSTALLER" "$runtime_installer" beta
 
 export HEXTUNNEL_NO_REBOOT=1
 bash "$runtime_installer" "$@"
