@@ -65,9 +65,11 @@ grep -q 'HEXTUNNEL_BETA_MODE' bin/hextunnel-beta-install
 grep -q 'HEXTUNNEL_BETA_SOURCE_SHA' bin/hextunnel-beta-install
 grep -q 'validar_key_hextunnel' bin/hextunnel-beta-install
 grep -q 'exec /usr/local/bin/menu' bin/hextunnel-beta-install
-grep -q '1.0.0-beta.1' docs/BETA.md
+grep -q '1.0.0-rc.1' docs/BETA.md
 
 grep -q '^1\.0\.0-rc\.1$' VERSION
+grep -q 'debian:12|ubuntu:22.04|ubuntu:24.04' lib/validation.sh
+grep -q 'validada únicamente para amd64' lib/validation.sh
 grep -q 'operation_lock_acquire' lib/rollback.sh
 grep -q 'flock -n 8' lib/rollback.sh
 grep -q 'hextunnel-backup restore' bin/hextunnel-backup
