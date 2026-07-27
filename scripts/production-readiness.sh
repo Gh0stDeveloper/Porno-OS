@@ -61,7 +61,10 @@ trap 'rm -rf "${DIST:-}"' EXIT
 SOURCE_DATE_EPOCH=1700000000 bash scripts/build-release.sh "$DIST"
 ARCHIVE="$DIST/hextunnel-$VERSION.tar.gz"
 [[ -s "$ARCHIVE" && -s "$ARCHIVE.sha256" ]] || fail "no se generó el paquete de release"
-sha256sum -c "$ARCHIVE.sha256"
+(
+  cd "$DIST"
+  sha256sum -c "$(basename "$ARCHIVE.sha256")"
+)
 tar -tzf "$ARCHIVE" | grep -q "hextunnel-$VERSION/RELEASE-MANIFEST.sha256"
 if [[ "${HEXTUNNEL_RELEASE_BUILD:-0}" == 1 ]]; then
   tar -tzf "$ARCHIVE" | grep -q "hextunnel-$VERSION/config/component-lock.env"
