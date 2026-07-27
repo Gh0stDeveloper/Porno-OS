@@ -46,6 +46,19 @@ sudo HEXTUNNEL_BETA_ACK="ACEPTO_BETA_PRIVADA" \
 
 No uses una rama como `main` o `feat/transactional-architecture` en `HEXTUNNEL_BETA_REF`. El bootstrap la rechazará.
 
+## Verificación no destructiva del paquete
+
+Antes de instalar en un VPS se puede confirmar que el commit existe, el TAR es seguro y contiene un único entrypoint beta:
+
+```bash
+sudo HEXTUNNEL_BETA_ACK="ACEPTO_BETA_PRIVADA" \
+  HEXTUNNEL_BETA_REF="$BETA_SHA" \
+  HEXTUNNEL_BETA_VERIFY_ONLY=1 \
+  /tmp/hextunnel-beta-install.sh
+```
+
+Este modo descarga, inspecciona y elimina el paquete temporal. No ejecuta el instalador original ni modifica servicios.
+
 ## Verificación posterior
 
 Después de instalar y antes de crear usuarios:
