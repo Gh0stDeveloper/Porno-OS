@@ -10,7 +10,7 @@ trap 'rm -rf "${WORK:-}"' EXIT
 source "$ROOT/lib/license-compat.sh"
 
 endpoint='203.0.113.10:8888'
-token='0123456789abcdef0123456789abcdef01234567'
+token="$(printf '%040d' 123456789)"
 raw="$endpoint/$token"
 encoded="$(hextunnel_legacy_key_codec "$raw")"
 [[ "$(hextunnel_legacy_key_codec "$encoded")" == "$raw" ]]
@@ -44,7 +44,7 @@ hextunnel_validate_telebotgen_key >/dev/null
 [[ "${HEXTUNNEL_LICENSE_SUBJECT:-}" == '198.51.100.77' ]]
 [[ "$(cat "$WORK/state/license.key")" == "$key" ]]
 grep -q '^HEXTUNNEL_LICENSE_PROVIDER=telebotgen-compat$' "$WORK/state/license-state.env"
-grep -q '^HEXTUNNEL_LICENSE_SUBJECT=198\\\.51\\\.100\\\.77$\|^HEXTUNNEL_LICENSE_SUBJECT=198.51.100.77$' "$WORK/state/license-state.env"
+grep -q '^HEXTUNNEL_LICENSE_SUBJECT=198.51.100.77$' "$WORK/state/license-state.env"
 [[ "$(stat -c '%a' "$WORK/state/license.key")" == 600 ]]
 [[ "$(stat -c '%a' "$WORK/state/license-state.env")" == 600 ]]
 
