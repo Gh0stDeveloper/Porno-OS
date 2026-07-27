@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+beta_install_error() {
+  printf 'ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
+[[ "${EUID:-$(id -u)}" -eq 0 ]] || beta_install_error "La instalación beta debe ejecutarse como root."
+[[ "${HEXTUNNEL_BETA_MODE:-0}" == 1 ]] \
+  || beta_install_error "Este entrypoint solo puede ejecutarse mediante beta-install.sh."
+[[ "${HEXTUNNEL_BETA_SOURCE_SHA:-}" =~ ^[0-9a-f]{40}$ ]] \
+  || beta_install_error "No se recibió un commit beta válido."
+
+ROOT="${HEXTUNNEL_BETA_PACKAGE_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)}"
+LEGACY_INSTALLER="$ROOT/legacy/install-all.sh"
+[[ -f "$LEGACY_INSTALLER" ]] || beta_install_error "No se encontró el instalador original completo."
+
+validation_calls="$(grep -cE '^[[:space:]]*validar_key_hextunnel[[:space:]]*$' "$LEGACY_INSTALLER" || true)"
+[[ "$validation_calls" == 1 ]] \
+  || beta_install_error "No se pudo identificar de forma segura la validación heredada."
+
+runtime_installer="$(mktemp /tmp/hextunnel-beta-original.XXXXXX.sh)"
+trap 'rm -f "${runtime_installer:-}"' EXIT
+
+awk '
+  /^[[:space:]]*validar_key_hextunnel[[:space:]]*$/ {
+    print "if [[ \"${HEXTUNNEL_BETA_MODE:-0}\" != \"1\" ]]; then"
+    print "  echo \"ERROR: el modo beta no fue autorizado por el bootstrap.\" >&2"
+    print "  exit 1"
+    print "fi"
+    print "echo \"Modo beta privado autorizado. Iniciando instalación completa...\""
+    next
+  }
+  { print }
+' "$LEGACY_INSTALLER" > "$runtime_installer"
+chmod 700 "$runtime_installer"
+
+export HEXTUNNEL_NO_REBOOT=1
+bash "$runtime_installer" "$@"
+
+trap - EXIT
+rm -f "$runtime_installer"
+
+install -d -m 700 /etc/hextunnel
+cat > /etc/hextunnel/beta-state.env <<EOF
+HEXTUNNEL_CHANNEL=beta
+HEXTUNNEL_VERSION=1.0.0-beta.1
+HEXTUNNEL_SOURCE_SHA=$(printf '%q' "$HEXTUNNEL_BETA_SOURCE_SHA")
+HEXTUNNEL_INSTALLED_AT=$(printf '%q' "$(date -u +%Y-%m-%dT%H:%M:%SZ)")
+EOF
+chmod 600 /etc/hextunnel/beta-state.env
+
+if [[ -x /usr/local/bin/menu ]]; then
+  if [[ -t 0 && -t 1 ]]; then
+    exec /usr/local/bin/menu
+  fi
+  printf 'Beta instalada. Abre el panel con: sudo menu\n'
+  exit 0
+fi
+
+beta_install_error "La instalación terminó, pero no se creó /usr/local/bin/menu."
