@@ -1,0 +1,19 @@
+name: Private beta bootstrap
+on:
+  push:
+    branches: ['feat/**', 'fix/**', 'main']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify-beta-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify pinned beta archive and entrypoint
+        run: |
+          sudo env \
+            HEXTUNNEL_BETA_ACK=ACEPTO_BETA_PRIVADA \
+            HEXTUNNEL_BETA_REF="$GITHUB_SHA" \
+            HEXTUNNEL_BETA_VERIFY_ONLY=1 \
+            ./beta-install.sh
