@@ -6,6 +6,7 @@ install_framework() {
   ensure_dir 700 "$HEXTUNNEL_ETC"
   ensure_dir 700 "$HEXTUNNEL_STATE"
   ensure_dir 750 "$HEXTUNNEL_LOG_DIR"
+  ensure_dir 700 /var/backups/hextunnel
 
   if [[ "$source_root" != "$HEXTUNNEL_INSTALL_DIR" ]]; then
     backup_path "$HEXTUNNEL_INSTALL_DIR"
@@ -14,18 +15,20 @@ install_framework() {
     else
       rm -rf "$HEXTUNNEL_INSTALL_DIR"
       install -d -m 755 "$HEXTUNNEL_INSTALL_DIR"
-      tar -C "$source_root" --exclude=.git --exclude='*.log' -cf - . | tar -C "$HEXTUNNEL_INSTALL_DIR" -xf -
+      tar -C "$source_root" --exclude=.git --exclude='*.log' --exclude=dist -cf - . | tar -C "$HEXTUNNEL_INSTALL_DIR" -xf -
       find "$HEXTUNNEL_INSTALL_DIR" -type d -exec chmod 755 {} +
       find "$HEXTUNNEL_INSTALL_DIR" -type f -name '*.sh' -exec chmod 644 {} +
       chmod 755 \
         "$HEXTUNNEL_INSTALL_DIR/install.sh" \
+        "$HEXTUNNEL_INSTALL_DIR/beta-install.sh" \
         "$HEXTUNNEL_INSTALL_DIR"/bin/* \
+        "$HEXTUNNEL_INSTALL_DIR"/scripts/*.sh \
         "$HEXTUNNEL_INSTALL_DIR/legacy/install-all.sh"
     fi
   fi
 
   local command
-  for command in hextunnel hextunnel-doctor hextunnel-account hextunnel-update hextunnel-health hextunnel-nat; do
+  for command in hextunnel hextunnel-doctor hextunnel-account hextunnel-backup hextunnel-update hextunnel-health hextunnel-nat; do
     [[ -f "$HEXTUNNEL_INSTALL_DIR/bin/$command" || "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] || continue
     backup_path "/usr/local/bin/$command"
     if [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]]; then
@@ -50,6 +53,27 @@ install_framework() {
     fi
   fi
 
+  write_file "$HEXTUNNEL_ETC/release.env" 600 <<EOF
+HEXTUNNEL_VERSION=$(printf '%q' "$HEXTUNNEL_VERSION")
+HEXTUNNEL_RELEASE_CHANNEL=$(printf '%q' "$HEXTUNNEL_RELEASE_CHANNEL")
+HEXTUNNEL_INSTALLED_AT=$(printf '%q' "$(date -u +%Y-%m-%dT%H:%M:%SZ)")
+HEXTUNNEL_SOURCE_SHA=$(printf '%q' "${HEXTUNNEL_BETA_SOURCE_SHA:-${GITHUB_SHA:-unknown}}")
+EOF
+
+  write_file /etc/logrotate.d/hextunnel 644 <<'EOF'
+/var/log/hextunnel/*.log /var/log/hextunnel/*.txt {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    su root root
+    create 0640 root root
+}
+EOF
+
   install_systemd_unit hextunnel-health.service 644 <<'EOF'
 [Unit]
 Description=Hex Tunnel health audit
@@ -64,6 +88,11 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=full
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
 ReadOnlyPaths=/opt/hextunnel /etc/hextunnel
 ReadWritePaths=/var/log/hextunnel /var/lib/hextunnel
 EOF
