@@ -13,11 +13,14 @@ load_module_registry
 
 usage() {
   cat <<'EOF'
+hextunnel version
+hextunnel preflight [modulo...]
 hextunnel doctor [--report archivo]
 hextunnel status
 hextunnel install <modulo...>
 hextunnel uninstall <modulo|--all>
 hextunnel account <comando...>
+hextunnel backup <comando...>
 hextunnel update <comando...>
 hextunnel rollback [id] [--force]
 hextunnel legacy-menu
@@ -114,6 +117,8 @@ doctor() {
 
   {
     echo "Hex Tunnel Doctor"
+    echo "Versión: $HEXTUNNEL_VERSION"
+    echo "Canal: $HEXTUNNEL_RELEASE_CHANNEL"
     echo "Fecha: $(date -Is)"
     echo "Host: $(hostname)"
     echo "OS: $(. /etc/os-release; echo "$PRETTY_NAME")"
@@ -193,6 +198,18 @@ rollback_command() {
 }
 
 case "${1:-help}" in
+  version|--version|-V)
+    printf 'Hex Tunnel %s (%s)\n' "$HEXTUNNEL_VERSION" "$HEXTUNNEL_RELEASE_CHANNEL"
+    ;;
+  preflight)
+    shift
+    modules=("$@")
+    if ((${#modules[@]} == 0)); then
+      modules=(ssh xray hysteria hysteria2 udp-custom slowdns slipstream zivpn webmin)
+    fi
+    resolve_module_dependencies modules
+    preflight_all "${modules[@]}"
+    ;;
   doctor)
     shift
     if [[ "${1:-}" == --report ]]; then
@@ -224,6 +241,10 @@ case "${1:-help}" in
   account)
     shift
     exec "$ROOT/bin/hextunnel-account" "$@"
+    ;;
+  backup)
+    shift
+    exec "$ROOT/bin/hextunnel-backup" "$@"
     ;;
   update)
     shift
