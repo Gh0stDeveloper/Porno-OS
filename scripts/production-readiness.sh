@@ -64,7 +64,13 @@ bash tests/integration/test-syntax.sh
 if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
   bash tests/integration/test-dry-run.sh
 elif command -v sudo >/dev/null 2>&1; then
-  sudo -E bash tests/integration/test-dry-run.sh
+  root_lock="$(mktemp /tmp/hextunnel-component-lock.XXXXXX.env)"
+  trap 'sudo rm -f "${root_lock:-}"; rm -rf "${DIST:-}"' EXIT
+  sudo install -m 600 -o root -g root config/component-lock.env "$root_lock"
+  sudo -E env HEXTUNNEL_COMPONENT_LOCK_FILE="$root_lock" \
+    bash tests/integration/test-dry-run.sh
+  sudo rm -f "$root_lock"
+  root_lock=""
 else
   fail "test-dry-run requiere root o sudo"
 fi
