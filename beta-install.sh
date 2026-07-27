@@ -37,6 +37,7 @@ beta_main() {
   local ref="${HEXTUNNEL_BETA_REF:-}"
   local expected_sha="${HEXTUNNEL_BETA_ARCHIVE_SHA256:-}"
   local acknowledgement="${HEXTUNNEL_BETA_ACK:-}"
+  local verify_only="${HEXTUNNEL_BETA_VERIFY_ONLY:-0}"
   local tmp archive extract_root entrypoint package_root
   local -a entrypoint_matches=()
 
@@ -49,6 +50,8 @@ beta_main() {
     || beta_error "El bootstrap beta solo admite Gh0stDeveloper/Porno-OS."
   [[ "$ref" =~ ^[0-9a-fA-F]{40}$ ]] \
     || beta_error "HEXTUNNEL_BETA_REF debe ser el SHA completo de un commit, no una rama."
+  [[ "$verify_only" == 0 || "$verify_only" == 1 ]] \
+    || beta_error "HEXTUNNEL_BETA_VERIFY_ONLY solo admite 0 o 1."
 
   printf '%s\n' '============================================================'
   printf '%s\n' '              HEX TUNNEL — BETA PRIVADA'
@@ -84,6 +87,11 @@ beta_main() {
   entrypoint="${entrypoint_matches[0]}"
   package_root="${entrypoint%/bin/hextunnel-beta-install}"
   chmod 700 "$entrypoint"
+
+  if [[ "$verify_only" == 1 ]]; then
+    printf 'Paquete beta verificado correctamente para el commit %s.\n' "${ref,,}"
+    return 0
+  fi
 
   export HEXTUNNEL_BETA_MODE=1
   export HEXTUNNEL_BETA_SOURCE_SHA="${ref,,}"
