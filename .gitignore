@@ -1,5 +1,7 @@
 config/secrets.env
 config/hextunnel.env
+config/component-lock.env
+dist/
 *.log
 *.bak
 *.tmp
