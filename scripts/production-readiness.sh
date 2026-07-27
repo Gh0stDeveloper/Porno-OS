@@ -19,7 +19,7 @@ required=(
   bin/hextunnel bin/hextunnel-account bin/hextunnel-backup bin/hextunnel-doctor
   bin/hextunnel-health bin/hextunnel-nat bin/hextunnel-update
   docs/ARCHITECTURE.md docs/BETA.md docs/OPERATIONS.md docs/RECOVERY.md
-  SECURITY.md CHANGELOG.md
+  SECURITY.md CHANGELOG.md VERSION
 )
 for path in "${required[@]}"; do
   [[ -s "$path" ]] || fail "falta archivo requerido: $path"
@@ -38,6 +38,7 @@ bash tests/security/test-hardening.sh
 bash tests/security/test-current-tree.sh
 bash tests/unit/test-core.sh
 bash tests/unit/test-module-contract.sh
+bash tests/unit/test-production-operations.sh
 bash tests/integration/test-syntax.sh
 bash tests/integration/test-dry-run.sh
 
