@@ -32,6 +32,16 @@ if grep -q 'codeload.github.com' install.sh; then
   exit 1
 fi
 
+if grep -RIE 'raw\.githubusercontent\.com/[^[:space:]"'"']+/main/' modules config scripts; then
+  echo 'mutable raw GitHub main URLs are forbidden in production dependencies' >&2
+  exit 1
+fi
+
+if grep -Eq '^[[:space:]]*HEXTUNNEL_(UDP_CUSTOM|SLOWDNS|BADVPN|SINGBOX|ZIVPN)_[A-Z0-9_]+=""' config/hextunnel.env.example; then
+  echo 'empty component overrides must not erase release lock values' >&2
+  exit 1
+fi
+
 grep -q "webmin_set_config_value ssl 1" modules/webmin.sh
 grep -q "install -m 640 -o root -g hextunnel-hysteria2" lib/accounts.sh
 grep -q "runuser -u hextunnel-slowdns -- test -r" modules/slowdns.sh
@@ -76,6 +86,11 @@ grep -q 'hextunnel-backup restore' bin/hextunnel-backup
 grep -q -- '--confirm-host' bin/hextunnel-backup
 grep -q 'pre-restore-' bin/hextunnel-backup
 grep -q 'RELEASE-MANIFEST.sha256' scripts/build-release.sh
+grep -q 'resolve-component-lock.sh' .github/workflows/release-candidate.yml
+grep -q 'HEXTUNNEL_COMPONENT_LOCK_FILE' lib/common.sh
+grep -q 'HEXTUNNEL_COMPONENT_LOCK_VERSION' scripts/resolve-component-lock.sh
+grep -q 'd7bb82abb6b36f1320bc349f36c0746b335a9ff9' modules/udp-custom.sh
+grep -q 'b667b0d15be0589cd89cd2f997873296ceb07ce2' modules/slowdns.sh
 grep -q 'Production readiness: OK' scripts/production-readiness.sh
 grep -q 'hextunnel-backup' lib/framework.sh
 grep -q '/etc/logrotate.d/hextunnel' lib/framework.sh
