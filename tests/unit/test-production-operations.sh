@@ -38,6 +38,8 @@ if env \
   exit 1
 fi
 
+bash "$ROOT/tests/unit/test-license-compat.sh"
+
 SOURCE_DATE_EPOCH=1700000000 bash "$ROOT/scripts/build-release.sh" "$WORK/dist-a" >/dev/null
 SOURCE_DATE_EPOCH=1700000000 bash "$ROOT/scripts/build-release.sh" "$WORK/dist-b" >/dev/null
 VERSION="$(tr -d '\r\n' < "$ROOT/VERSION")"
