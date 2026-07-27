@@ -32,7 +32,7 @@ if grep -q 'codeload.github.com' install.sh; then
   exit 1
 fi
 
-if grep -RIE 'raw\.githubusercontent\.com/[^[:space:]"'"']+/main/' modules config scripts; then
+if grep -RIE 'raw\.githubusercontent\.com/.*/main/' modules config scripts; then
   echo 'mutable raw GitHub main URLs are forbidden in production dependencies' >&2
   exit 1
 fi
@@ -63,6 +63,8 @@ grep -q 'openssl dgst -sha256 -verify' install.sh
 grep -q 'HEXTUNNEL_LICENSE_PREVALIDATED=1' install.sh
 grep -q '"entrypoint": "bin/hextunnel-private-install"' docs/PRIVATE_DISTRIBUTION.md
 grep -q 'validar_key_hextunnel' bin/hextunnel-private-install
+grep -q 'bash "$PREFLIGHT"' bin/hextunnel-private-install
+grep -q 'bash "$FINALIZER"' bin/hextunnel-private-install
 grep -q 'exec /usr/local/bin/menu' bin/hextunnel-private-install
 
 grep -q 'HEXTUNNEL_BETA_ACK' beta-install.sh
@@ -74,6 +76,8 @@ grep -q 'HEXTUNNEL_BETA_MODE=1' beta-install.sh
 grep -q 'HEXTUNNEL_BETA_MODE' bin/hextunnel-beta-install
 grep -q 'HEXTUNNEL_BETA_SOURCE_SHA' bin/hextunnel-beta-install
 grep -q 'validar_key_hextunnel' bin/hextunnel-beta-install
+grep -q 'bash "$PREFLIGHT"' bin/hextunnel-beta-install
+grep -q 'bash "$FINALIZER"' bin/hextunnel-beta-install
 grep -q 'exec /usr/local/bin/menu' bin/hextunnel-beta-install
 grep -q '1.0.0-rc.1' docs/BETA.md
 
@@ -81,10 +85,15 @@ grep -q '^1\.0\.0-rc\.1$' VERSION
 grep -q 'debian:12|ubuntu:22.04|ubuntu:24.04' lib/validation.sh
 grep -q 'validada únicamente para amd64' lib/validation.sh
 grep -q 'operation_lock_acquire' lib/rollback.sh
+grep -q 'HEXTUNNEL_OPERATION_LOCK_FILE' lib/common.sh
+grep -q '/run/lock/hextunnel-operation.lock' lib/common.sh
 grep -q 'flock -n 8' lib/rollback.sh
 grep -q 'hextunnel-backup restore' bin/hextunnel-backup
 grep -q -- '--confirm-host' bin/hextunnel-backup
 grep -q 'pre-restore-' bin/hextunnel-backup
+grep -q 'module_validate legacy-all' bin/hextunnel-finalize-install
+grep -q 'install_framework' bin/hextunnel-finalize-install
+grep -q 'preflight_all legacy-all' bin/hextunnel-legacy-preflight
 grep -q 'RELEASE-MANIFEST.sha256' scripts/build-release.sh
 grep -q 'resolve-component-lock.sh' .github/workflows/release-candidate.yml
 grep -q 'HEXTUNNEL_COMPONENT_LOCK_FILE' lib/common.sh
