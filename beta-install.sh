@@ -15,14 +15,15 @@ beta_require_root() {
 
 beta_install_dependencies() {
   local command missing=0
-  for command in curl tar sha256sum; do
+  for command in curl jq openssl tar sha256sum ss flock; do
     command -v "$command" >/dev/null 2>&1 || missing=1
   done
   ((missing == 0)) && return 0
   command -v apt-get >/dev/null 2>&1 || beta_error "Faltan dependencias y apt-get no está disponible."
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -y
-  apt-get install -y --no-install-recommends curl ca-certificates tar coreutils
+  apt-get install -y --no-install-recommends \
+    curl jq openssl ca-certificates tar coreutils iproute2 util-linux
 }
 
 beta_validate_archive_paths() {
