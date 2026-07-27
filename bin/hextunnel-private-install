@@ -13,7 +13,13 @@ private_install_error() {
 
 ROOT="${HEXTUNNEL_PRIVATE_PACKAGE_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)}"
 LEGACY_INSTALLER="$ROOT/legacy/install-all.sh"
+PREFLIGHT="$ROOT/bin/hextunnel-legacy-preflight"
+FINALIZER="$ROOT/bin/hextunnel-finalize-install"
 [[ -f "$LEGACY_INSTALLER" ]] || private_install_error "No se encontró el instalador original completo."
+[[ -f "$PREFLIGHT" && -f "$FINALIZER" ]] || private_install_error "El paquete privado no contiene las fases de preflight y finalización."
+
+export HEXTUNNEL_PACKAGE_ROOT="$ROOT"
+bash "$PREFLIGHT"
 
 validation_calls="$(grep -cE '^[[:space:]]*validar_key_hextunnel[[:space:]]*$' "$LEGACY_INSTALLER" || true)"
 [[ "$validation_calls" == 1 ]] \
@@ -36,10 +42,10 @@ awk '
 chmod 700 "$runtime_installer"
 
 # La key ya quedó almacenada con permisos 600 para renovaciones y actualizaciones.
-# El instalador heredado no necesita recibirla en su entorno.
 unset HEXTUNNEL_LICENSE_KEY
 export HEXTUNNEL_NO_REBOOT=1
 bash "$runtime_installer" "$@"
+bash "$FINALIZER"
 
 trap - EXIT
 rm -f "$runtime_installer"
