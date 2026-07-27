@@ -18,6 +18,8 @@ required=(
   install.sh beta-install.sh
   bin/hextunnel bin/hextunnel-account bin/hextunnel-backup bin/hextunnel-doctor
   bin/hextunnel-health bin/hextunnel-nat bin/hextunnel-update
+  bin/hextunnel-legacy-preflight bin/hextunnel-finalize-install
+  bin/hextunnel-private-install bin/hextunnel-beta-install
   docs/ARCHITECTURE.md docs/BETA.md docs/OPERATIONS.md docs/RECOVERY.md
   scripts/build-release.sh scripts/resolve-component-lock.sh
   SECURITY.md CHANGELOG.md VERSION
