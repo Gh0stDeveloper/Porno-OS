@@ -70,27 +70,34 @@ grep -q 'bash "$PREFLIGHT"' bin/hextunnel-private-install
 grep -q 'bash "$PREPARER".*licensed' bin/hextunnel-private-install
 grep -q 'bash "$FINALIZER"' bin/hextunnel-private-install
 grep -q 'exec /usr/local/bin/menu' bin/hextunnel-private-install
+grep -q 'HEXTUNNEL_OPERATION:-install' bin/hextunnel-private-install
+grep -q 'install_framework' bin/hextunnel-private-upgrade
+grep -q 'hextunnel-license-renew.timer' bin/hextunnel-install-license-runtime
+grep -q 'https://ghostdeveloper.duckdns.org/install.sh' bin/hextunnel-install-license-runtime
+grep -q 'openssl dgst -sha256 -verify' bin/hextunnel-license
+grep -q '@Gh0stDeveloper' bin/hextunnel-install-license-runtime
+grep -q '@Jotchua_DevzZ' bin/hextunnel-install-license-runtime
 
 grep -q 'HEXTUNNEL_BETA_ACK' beta-install.sh
 grep -q 'ACEPTO_BETA_PRIVADA' beta-install.sh
 grep -q 'HEXTUNNEL_BETA_REF' beta-install.sh
 grep -q '\^\[0-9a-fA-F\]{40}\$' beta-install.sh
 grep -q 'Gh0stDeveloper/Porno-OS' beta-install.sh
-grep -q 'HEXTUNNEL_BETA_MODE=1' beta-install.sh
-grep -q 'HEXTUNNEL_BETA_MODE' bin/hextunnel-beta-install
-grep -q 'HEXTUNNEL_BETA_SOURCE_SHA' bin/hextunnel-beta-install
+grep -q HEXTUNNEL_BETA_MODE=1 beta-install.sh
+grep -q HEXTUNNEL_BETA_MODE bin/hextunnel-beta-install
+grep -q HEXTUNNEL_BETA_SOURCE_SHA bin/hextunnel-beta-install
 grep -q 'bash "$PREFLIGHT"' bin/hextunnel-beta-install
 grep -q 'bash "$PREPARER".*beta' bin/hextunnel-beta-install
 grep -q 'bash "$FINALIZER"' bin/hextunnel-beta-install
 grep -q 'exec /usr/local/bin/menu' bin/hextunnel-beta-install
-grep -q '1.0.0-rc.1' docs/BETA.md
+grep -q '1.0.0-rc.2' docs/BETA.md
 
-grep -q '^1\.0\.0-rc\.1$' VERSION
+grep -q '^1\.0\.0-rc\.2$' VERSION
 grep -q 'debian:12|ubuntu:22.04|ubuntu:24.04' lib/validation.sh
 grep -q 'validada únicamente para amd64' lib/validation.sh
 grep -q 'operation_lock_acquire' lib/rollback.sh
-grep -q 'HEXTUNNEL_OPERATION_LOCK_FILE' lib/common.sh
-grep -q '/run/lock/hextunnel-operation.lock' lib/common.sh
+grep -q HEXTUNNEL_OPERATION_LOCK_FILE lib/common.sh
+grep -q /run/lock/hextunnel-operation.lock lib/common.sh
 grep -q 'flock -n 8' lib/rollback.sh
 grep -q 'hextunnel-backup restore' bin/hextunnel-backup
 grep -q -- '--confirm-host' bin/hextunnel-backup
@@ -109,14 +116,14 @@ grep -q 'hextunnel-install-locked-component' scripts/prepare-legacy-runtime.sh
 grep -q 'hextunnel-slipstream-compat' scripts/prepare-legacy-runtime.sh
 grep -q 'locked_download' bin/hextunnel-install-locked-component
 grep -q 'module_install slipstream' bin/hextunnel-slipstream-compat
-grep -q 'RELEASE-MANIFEST.sha256' scripts/build-release.sh
-grep -q 'resolve-component-lock.sh' .github/workflows/release-candidate.yml
-grep -q 'HEXTUNNEL_COMPONENT_LOCK_FILE' lib/common.sh
-grep -q 'HEXTUNNEL_COMPONENT_LOCK_VERSION' scripts/resolve-component-lock.sh
-grep -q 'd7bb82abb6b36f1320bc349f36c0746b335a9ff9' modules/udp-custom.sh
-grep -q 'b667b0d15be0589cd89cd2f997873296ceb07ce2' modules/slowdns.sh
+grep -q RELEASE-MANIFEST.sha256 scripts/build-release.sh
+grep -q resolve-component-lock.sh .github/workflows/release-candidate.yml
+grep -q HEXTUNNEL_COMPONENT_LOCK_FILE lib/common.sh
+grep -q HEXTUNNEL_COMPONENT_LOCK_VERSION scripts/resolve-component-lock.sh
+grep -q d7bb82abb6b36f1320bc349f36c0746b335a9ff9 modules/udp-custom.sh
+grep -q b667b0d15be0589cd89cd2f997873296ceb07ce2 modules/slowdns.sh
 grep -q 'Production readiness: OK' scripts/production-readiness.sh
-grep -q 'hextunnel-backup' lib/framework.sh
-grep -q 'hextunnel-slipstream-compat' lib/framework.sh
-grep -q '/etc/logrotate.d/hextunnel' lib/framework.sh
+grep -q hextunnel-backup lib/framework.sh
+grep -q hextunnel-slipstream-compat lib/framework.sh
+grep -q /etc/logrotate.d/hextunnel lib/framework.sh
 printf 'hardening invariants: ok\n'
