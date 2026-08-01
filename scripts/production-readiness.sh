@@ -90,6 +90,10 @@ archive_listing="$DIST/hextunnel-$VERSION.archive-list.txt"
 tar -tzf "$ARCHIVE" > "$archive_listing"
 grep -Fqx "hextunnel-$VERSION/RELEASE-MANIFEST.sha256" "$archive_listing" \
   || fail "el paquete no contiene RELEASE-MANIFEST.sha256"
+if [[ "${HEXTUNNEL_RELEASE_BUILD:-0}" == 1 ]]; then
+  grep -Fqx "hextunnel-$VERSION/config/component-lock.env" "$archive_listing" \
+    || fail "el paquete no contiene config/component-lock.env"
+fi
 grep -Fqx "hextunnel-$VERSION/bin/hextunnel-license" "$archive_listing" \
   || fail "el paquete no contiene hextunnel-license"
 grep -Fqx "hextunnel-$VERSION/bin/hextunnel-private-upgrade" "$archive_listing" \
