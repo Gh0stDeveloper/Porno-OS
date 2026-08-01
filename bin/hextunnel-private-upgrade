@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+upgrade_error(){ printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+[[ "${EUID:-$(id -u)}" -eq 0 ]] || upgrade_error "La actualización requiere root."
+[[ "${HEXTUNNEL_LICENSE_PREVALIDATED:-0}" == 1 ]] || upgrade_error "La actualización requiere una autorización de licencia válida."
+
+ROOT="${HEXTUNNEL_PRIVATE_PACKAGE_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)}"
+[[ -f "$ROOT/lib/common.sh" && -f "$ROOT/lib/framework.sh" ]] || upgrade_error "Paquete de actualización incompleto."
+export HEXTUNNEL_ROOT="$ROOT"
+
+for file in common logging backup rollback systemd firewall nat secrets validation modules framework; do
+  # shellcheck disable=SC1090
+  source "$ROOT/lib/$file.sh"
+done
+
+require_root
+init_logging
+load_runtime_config
+load_hextunnel_secrets
+load_module_registry
+HEXTUNNEL_DRY_RUN=0
+HEXTUNNEL_NON_INTERACTIVE=1
+HEXTUNNEL_NO_REBOOT=1
+HEXTUNNEL_FORCE=1
+export HEXTUNNEL_DRY_RUN HEXTUNNEL_NON_INTERACTIVE HEXTUNNEL_NO_REBOOT HEXTUNNEL_FORCE
+
+transaction_begin licensed-framework-upgrade
+trap 'transaction_fail "$?" "$LINENO" "$BASH_COMMAND"' ERR INT TERM
+install_framework
+transaction_commit
+trap - ERR INT TERM
+
+bash /opt/hextunnel/bin/hextunnel-install-license-runtime
+/usr/local/bin/hextunnel version
+printf 'Hex Tunnel actualizado de forma segura. Los servicios de red instalados se conservaron.\n'
+printf 'Comprueba el sistema con: sudo hextunnel doctor\n'
+printf 'Estado de licencia: sudo hextunnel license status\n'
