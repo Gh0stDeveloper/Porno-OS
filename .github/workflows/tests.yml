@@ -21,6 +21,8 @@ jobs:
         run: bash tests/unit/test-module-contract.sh
       - name: Test production operations
         run: bash tests/unit/test-production-operations.sh
+      - name: Test signed license runtime
+        run: bash tests/unit/test-license-runtime.sh
       - name: Test sanitized complete installer
         shell: bash
         run: |
