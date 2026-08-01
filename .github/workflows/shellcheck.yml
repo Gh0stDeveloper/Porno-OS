@@ -21,3 +21,10 @@ jobs:
             -not -path './legacy/*' \
             -not -path './.git/*' \
             -print0 | xargs -0 shellcheck --severity=error
+      - name: Check private license entrypoints
+        run: |
+          shellcheck --severity=error \
+            bin/hextunnel-license \
+            bin/hextunnel-install-license-runtime \
+            bin/hextunnel-private-install \
+            bin/hextunnel-private-upgrade
