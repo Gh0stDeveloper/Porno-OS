@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+[[ "${EUID:-$(id -u)}" -eq 0 ]] || { echo "ERROR: se requiere root." >&2; exit 1; }
+ROOT="${HEXTUNNEL_INSTALL_DIR:-/opt/hextunnel}"
+[[ -x "$ROOT/bin/hextunnel-license" ]] || {
+  SOURCE_ROOT="${HEXTUNNEL_PRIVATE_PACKAGE_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)}"
+  [[ -x "$SOURCE_ROOT/bin/hextunnel-license" ]] || { echo "ERROR: falta hextunnel-license." >&2; exit 1; }
+  ROOT="$SOURCE_ROOT"
+}
+
+install -d -m 0755 /usr/local/bin
+ln -sfn "$ROOT/bin/hextunnel-license" /usr/local/bin/hextunnel-license
+
+cat > /etc/systemd/system/hextunnel-license-renew.service <<'UNIT'
+[Unit]
+Description=Renovar autorización firmada de Hex Tunnel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/hextunnel-license renew --quiet
+User=root
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadOnlyPaths=/opt/hextunnel
+ReadWritePaths=/etc/hextunnel
+LockPersonality=true
+RestrictSUIDSGID=true
+UNIT
+
+cat > /etc/systemd/system/hextunnel-license-renew.timer <<'UNIT'
+[Unit]
+Description=Renovación periódica de licencia Hex Tunnel
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=6h
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+
+systemctl daemon-reload
+systemctl enable --now hextunnel-license-renew.timer >/dev/null
