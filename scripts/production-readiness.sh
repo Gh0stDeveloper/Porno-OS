@@ -19,9 +19,10 @@ required=(
   bin/hextunnel bin/hextunnel-account bin/hextunnel-backup bin/hextunnel-doctor
   bin/hextunnel-health bin/hextunnel-nat bin/hextunnel-update
   bin/hextunnel-legacy-preflight bin/hextunnel-finalize-install
-  bin/hextunnel-private-install bin/hextunnel-beta-install
+  bin/hextunnel-private-install bin/hextunnel-private-upgrade bin/hextunnel-beta-install
+  bin/hextunnel-license bin/hextunnel-install-license-runtime
   bin/hextunnel-install-locked-component bin/hextunnel-slipstream-compat
-  docs/ARCHITECTURE.md docs/BETA.md docs/OPERATIONS.md docs/RECOVERY.md
+  docs/ARCHITECTURE.md docs/BETA.md docs/OPERATIONS.md docs/RECOVERY.md docs/PRIVATE_DISTRIBUTION.md
   scripts/build-release.sh scripts/resolve-component-lock.sh scripts/prepare-legacy-runtime.sh
   SECURITY.md CHANGELOG.md VERSION
 )
@@ -59,6 +60,7 @@ bash tests/security/test-current-tree.sh
 bash tests/unit/test-core.sh
 bash tests/unit/test-module-contract.sh
 bash tests/unit/test-production-operations.sh
+bash tests/unit/test-license-runtime.sh
 bash tests/unit/test-legacy-runtime.sh
 bash tests/integration/test-syntax.sh
 if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
@@ -88,9 +90,11 @@ archive_listing="$DIST/hextunnel-$VERSION.archive-list.txt"
 tar -tzf "$ARCHIVE" > "$archive_listing"
 grep -Fqx "hextunnel-$VERSION/RELEASE-MANIFEST.sha256" "$archive_listing" \
   || fail "el paquete no contiene RELEASE-MANIFEST.sha256"
-if [[ "${HEXTUNNEL_RELEASE_BUILD:-0}" == 1 ]]; then
-  grep -Fqx "hextunnel-$VERSION/config/component-lock.env" "$archive_listing" \
-    || fail "el paquete no contiene config/component-lock.env"
-fi
+grep -Fqx "hextunnel-$VERSION/bin/hextunnel-license" "$archive_listing" \
+  || fail "el paquete no contiene hextunnel-license"
+grep -Fqx "hextunnel-$VERSION/bin/hextunnel-private-upgrade" "$archive_listing" \
+  || fail "el paquete no contiene el actualizador privado"
+grep -Fqx "hextunnel-$VERSION/bin/hextunnel-install-license-runtime" "$archive_listing" \
+  || fail "el paquete no contiene el runtime de licencia"
 
 printf 'Production readiness: OK (%s)\n' "$VERSION"
