@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+STATE_DIR="${HEXTUNNEL_LICENSE_STATE_DIR:-/etc/hextunnel}"
+STATE_FILE="$STATE_DIR/license-state.env"
+TOKEN_FILE="$STATE_DIR/activation.token"
+LEASE_ENDPOINT="${HEXTUNNEL_LEASE_ENDPOINT:-https://ghostdeveloperkeys.duckdns.org/api/v1/licenses/lease}"
+PUBLIC_KEY_URL="${HEXTUNNEL_LICENSE_PUBLIC_KEY_URL:-https://ghostdeveloperkeys.duckdns.org/.well-known/hextunnel-license-public.pem}"
+PUBLIC_KEY_SHA256="${HEXTUNNEL_LICENSE_PUBLIC_KEY_SHA256:-804f9b029d39dd9c9ba4246bcecf3cd9963a5555491f7da8dfc3cc6d24f6ec3e}"
+
+fail(){ printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+
+remaining_time(){
+  local value="$1" now target seconds days hours minutes
+  target="$(date -d "$value" +%s 2>/dev/null)" || { printf 'desconocido'; return; }
+  now="$(date -u +%s)"
+  seconds=$((target-now))
+  ((seconds > 0)) || { printf 'expirado'; return; }
+  days=$((seconds/86400)); hours=$(((seconds%86400)/3600)); minutes=$(((seconds%3600)/60))
+  printf '%dd %02dh %02dm' "$days" "$hours" "$minutes"
+}
+
+load_state(){
+  [[ -r "$STATE_FILE" ]] || fail "No existe el estado local de licencia."
+  # shellcheck disable=SC1090
+  source "$STATE_FILE"
+}
+
+show_status(){
+  load_state
+  printf 'Hex Tunnel — Licencia\n'
+  printf 'Versión instalada: %s\n' "${HEXTUNNEL_INSTALLED_VERSION:-desconocida}"
+  printf 'IP vinculada: %s\n' "${HEXTUNNEL_LICENSE_SUBJECT:-desconocida}"
+  printf 'Vencimiento: %s\n' "${HEXTUNNEL_LICENSE_EXPIRES_AT:-desconocido}"
+  printf 'Tiempo restante: %s\n' "$(remaining_time "${HEXTUNNEL_LICENSE_EXPIRES_AT:-}")"
+  printf 'Lease vigente hasta: %s\n' "${HEXTUNNEL_LEASE_EXPIRES_AT:-desconocido}"
+  printf 'Última operación: %s\n' "${HEXTUNNEL_LAST_OPERATION:-desconocida}"
+  printf 'Desarrolladores: @Gh0stDeveloper y @Jotchua_DevzZ\n'
+}
+
+renew_lease(){
+  [[ "${EUID:-$(id -u)}" -eq 0 ]] || fail "La renovación requiere root."
+  command -v curl >/dev/null 2>&1 || fail "curl no está instalado."
+  command -v jq >/dev/null 2>&1 || fail "jq no está instalado."
+  command -v openssl >/dev/null 2>&1 || fail "openssl no está instalado."
+  [[ -s "$TOKEN_FILE" ]] || fail "No existe activation.token."
+  load_state
+
+  local token ip response status lease subject product activation_id signature
+  local tmp public_key payload signature_file epoch
+  token="$(tr -d '\r\n' < "$TOKEN_FILE")"
+  ip="$(curl -4fsS --retry 2 --connect-timeout 8 --max-time 15 https://api.ipify.org)" \
+    || fail "No se pudo detectar la IP pública."
+  response="$(jq -n --arg token "$token" --arg ip "$ip" '{activation_token:$token,ip:$ip,product:"hextunnel"}' \
+    | curl -fsS --retry 2 --connect-timeout 8 --max-time 25 -H 'Content-Type: application/json' --data-binary @- "$LEASE_ENDPOINT")" \
+    || fail "La API rechazó la renovación."
+
+  status="$(jq -r '.status // empty' <<< "$response")"
+  lease="$(jq -r '.lease_expires_at // empty' <<< "$response")"
+  subject="$(jq -r '.subject // empty' <<< "$response")"
+  product="$(jq -r '.product // empty' <<< "$response")"
+  activation_id="$(jq -r '.activation_id // empty' <<< "$response")"
+  signature="$(jq -r '.signature // empty' <<< "$response")"
+  [[ "$status" == active && "$subject" == "$ip" && "$product" == hextunnel ]] || fail "La renovación no corresponde a esta VPS."
+  epoch="$(date -d "$lease" +%s 2>/dev/null)" || fail "La API devolvió una fecha inválida."
+  ((epoch > $(date -u +%s))) || fail "El lease recibido ya expiró."
+
+  tmp="$(mktemp -d /tmp/hextunnel-lease.XXXXXX)"
+  trap 'rm -rf "${tmp:-}"' EXIT
+  public_key="$tmp/public.pem"; payload="$tmp/payload"; signature_file="$tmp/signature"
+  curl -fsSL --retry 2 "$PUBLIC_KEY_URL" -o "$public_key" || fail "No se pudo descargar la clave pública."
+  printf '%s  %s\n' "$PUBLIC_KEY_SHA256" "$public_key" | sha256sum -c - >/dev/null \
+    || fail "La clave pública no coincide con el hash fijado."
+  printf 'status=%s\nlease_expires_at=%s\nsubject=%s\nproduct=%s\nactivation_id=%s\n' \
+    "$status" "$lease" "$subject" "$product" "$activation_id" > "$payload"
+  printf '%s' "$signature" | base64 -d > "$signature_file" 2>/dev/null || fail "Firma Base64 inválida."
+  openssl dgst -sha256 -verify "$public_key" -signature "$signature_file" "$payload" >/dev/null \
+    || fail "Firma RSA de lease inválida."
+
+  sed -i '/^HEXTUNNEL_LEASE_EXPIRES_AT=/d' "$STATE_FILE"
+  printf 'HEXTUNNEL_LEASE_EXPIRES_AT=%q\n' "$lease" >> "$STATE_FILE"
+  chmod 600 "$STATE_FILE"
+  [[ "${1:-}" == --quiet ]] || printf 'Lease renovado hasta %s\n' "$lease"
+}
+
+case "${1:-status}" in
+  status) show_status ;;
+  renew) renew_lease "${2:-}" ;;
+  remaining) load_state; remaining_time "${HEXTUNNEL_LICENSE_EXPIRES_AT:-}"; printf '\n' ;;
+  *) printf 'Uso: hextunnel-license {status|renew|remaining}\n' >&2; exit 2 ;;
+esac
