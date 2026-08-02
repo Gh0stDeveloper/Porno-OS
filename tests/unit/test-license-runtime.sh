@@ -5,6 +5,14 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
+privileged() {
+  if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+    "$@"
+  else
+    sudo "$@"
+  fi
+}
+
 expires_at="$(date -u -d '+2 days' +%Y-%m-%dT%H:%M:%SZ)"
 lease_at="$(date -u -d '+6 hours' +%Y-%m-%dT%H:%M:%SZ)"
 cat > "$TMP/license-state.env" <<EOF
@@ -107,14 +115,14 @@ renew_env=(
 if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
   env "${renew_env[@]}" bash "$license_runtime" renew --quiet
 else
-  command -v sudo >/dev/null 2>&1
   sudo -E env "${renew_env[@]}" bash "$license_runtime" renew --quiet
 fi
 
-grep -Fq "HEXTUNNEL_LEASE_EXPIRES_AT=$new_lease" "$TMP/license-state.env"
-[[ "$(grep -c '^HEXTUNNEL_LEASE_EXPIRES_AT=' "$TMP/license-state.env")" == 1 ]]
-grep -Fq "HEXTUNNEL_LICENSE_EXPIRES_AT='$expires_at'" "$TMP/license-state.env"
-[[ "$(stat -c '%a' "$TMP/license-state.env")" == 600 ]]
+privileged grep -Fq "HEXTUNNEL_LEASE_EXPIRES_AT=$new_lease" "$TMP/license-state.env"
+[[ "$(privileged grep -c '^HEXTUNNEL_LEASE_EXPIRES_AT=' "$TMP/license-state.env")" == 1 ]]
+privileged grep -Fq "HEXTUNNEL_LICENSE_EXPIRES_AT='$expires_at'" "$TMP/license-state.env"
+[[ "$(privileged stat -c '%a' "$TMP/license-state.env")" == 600 ]]
+[[ "$(privileged stat -c '%U:%G' "$TMP/license-state.env")" == root:root ]]
 grep -Fq 'https://license.test/lease' "$TMP/curl.log"
 ! grep -Fq 'https://keys.test/public.pem' "$TMP/curl.log"
 
