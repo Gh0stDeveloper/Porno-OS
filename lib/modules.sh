@@ -26,6 +26,11 @@ load_module_registry() {
     source "$file"
     HEXTUNNEL_MODULE_FILES["$module"]="$file"
   done
+  if [[ -r "$HEXTUNNEL_ROOT/lib/architecture.sh" ]]; then
+    # Loaded after modules so architecture contracts can override or extend them.
+    # shellcheck disable=SC1090
+    source "$HEXTUNNEL_ROOT/lib/architecture.sh"
+  fi
 }
 
 module_exists() {
@@ -97,6 +102,10 @@ module_is_installed() {
 module_install() {
   local module="$1"
   log_info "Instalando módulo: $module"
+
+  if declare -F prepare_module_architecture_environment >/dev/null 2>&1; then
+    prepare_module_architecture_environment "$module"
+  fi
 
   if [[ "$module" == ssh ]]; then
     ssh_capture_socket_mode
