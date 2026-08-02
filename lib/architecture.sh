@@ -19,13 +19,39 @@ slowdns_supported_architectures() { printf '%s\n' amd64; }
 slipstream_supported_architectures() { printf '%s\n' amd64; }
 legacy_all_supported_architectures() { printf '%s\n' amd64; }
 
-# An already-installed Hex Tunnel legitimately has sshd listening on both SSH
-# ports. Keep rejecting every unrelated process and every unrelated port.
+# A server migrating from the legacy/rc.2 layout can already have the managed
+# listeners active without module marker files. Accept only the expected owner
+# for each managed port; unrelated processes remain a hard conflict.
 ssh_allow_port_conflict() {
   local protocol="$1" port="$2" owner="$3"
-  [[ "$protocol" == tcp \
-    && ("$port" == 22 || "$port" == 299) \
-    && ("$owner" == *sshd* || "$owner" == *systemd*) ]]
+  [[ "$protocol" == tcp ]] || return 1
+  case "$port" in
+    22|299)
+      [[ "$owner" == *sshd* || "$owner" == *systemd* ]]
+      ;;
+    4443)
+      [[ "$owner" == *stunnel* ]]
+      ;;
+    25|2082|2086|10080)
+      [[ "$owner" == *node* ]]
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+xray_allow_port_conflict() {
+  local protocol="$1" port="$2" owner="$3"
+  [[ "$protocol" == tcp ]] || return 1
+  case "$port" in
+    80|443|8080|8880)
+      [[ "$owner" == *xray* ]]
+      ;;
+    *)
+      return 1
+      ;;
+  esac
 }
 
 module_supports_architecture() {
