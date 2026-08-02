@@ -108,6 +108,7 @@ renew_lease(){
   chmod 700 "$tmp"
   jq -n --arg token "$token" --arg ip "$ip" \
     '{activation_token:$token,ip:$ip,product:"hextunnel"}' > "$request_file"
+  : > "$response_file"
   chmod 600 "$request_file" "$response_file"
 
   if ! http_status="$(curl -sS --retry 2 --connect-timeout 8 --max-time 25 \
