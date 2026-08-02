@@ -34,14 +34,25 @@ for module in "${HEXTUNNEL_AVAILABLE_MODULES[@]}"; do
   done < <(module_call "$module" ports || true)
 done
 
-# Existing SSH listeners are valid during upgrades, but only on managed SSH
-# ports and only when the owning process is sshd/systemd.
+# Legacy/rc.2 migrations may have managed listeners but no module markers.
 ssh_allow_port_conflict tcp 22 'users:(("sshd",pid=1,fd=3))'
 ssh_allow_port_conflict tcp 299 'users:(("sshd",pid=2,fd=3))'
 ssh_allow_port_conflict tcp 299 'users:(("systemd",pid=1,fd=99))'
-! ssh_allow_port_conflict tcp 299 'users:(("nginx",pid=3,fd=4))'
-! ssh_allow_port_conflict tcp 443 'users:(("sshd",pid=4,fd=5))'
-! ssh_allow_port_conflict udp 299 'users:(("sshd",pid=5,fd=6))'
+ssh_allow_port_conflict tcp 4443 'users:(("stunnel4",pid=3,fd=4))'
+ssh_allow_port_conflict tcp 25 'users:(("node",pid=4,fd=5))'
+ssh_allow_port_conflict tcp 2082 'users:(("node",pid=5,fd=6))'
+ssh_allow_port_conflict tcp 2086 'users:(("node",pid=6,fd=7))'
+ssh_allow_port_conflict tcp 10080 'users:(("node",pid=7,fd=8))'
+! ssh_allow_port_conflict tcp 299 'users:(("nginx",pid=8,fd=9))'
+! ssh_allow_port_conflict tcp 443 'users:(("sshd",pid=9,fd=10))'
+! ssh_allow_port_conflict udp 299 'users:(("sshd",pid=10,fd=11))'
+
+for port in 80 443 8080 8880; do
+  xray_allow_port_conflict tcp "$port" 'users:(("xray",pid=11,fd=12))'
+done
+! xray_allow_port_conflict tcp 443 'users:(("nginx",pid=12,fd=13))'
+! xray_allow_port_conflict tcp 4443 'users:(("xray",pid=13,fd=14))'
+! xray_allow_port_conflict udp 443 'users:(("xray",pid=14,fd=15))'
 
 HEXTUNNEL_ARCH=arm64
 export HEXTUNNEL_ARCH
