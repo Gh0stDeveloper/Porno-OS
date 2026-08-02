@@ -4,7 +4,7 @@ Hex Tunnel es una plataforma Bash modular y transaccional para desplegar, operar
 
 ## Estado
 
-- Versión: `1.0.0-rc.2`.
+- Versión: `1.0.0-rc.3`.
 - Estado: release candidate privada.
 - Plataformas de producción: Debian 12, Ubuntu 22.04 LTS y Ubuntu 24.04 LTS.
 - Arquitecturas: `amd64/x86_64` y `arm64/aarch64`.
@@ -39,6 +39,7 @@ Por seguridad, UDP Custom, SlowDNS heredado, SlipStream dependiente de ese SlowD
 - Diagnóstico sanitizado y auditoría periódica mediante systemd.
 - Respaldo, verificación, cifrado opcional y restauración.
 - Actualizaciones privadas mediante autorización y paquete verificado.
+- Actualización del menú AMD64/ARM64 junto con el framework.
 - Paquetes reproducibles con manifiesto SHA-256 interno.
 
 ## Instalación comercial
