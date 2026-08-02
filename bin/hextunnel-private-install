@@ -19,6 +19,41 @@ if [[ "${HEXTUNNEL_OPERATION:-install}" == upgrade ]]; then
   exec bash "$ROOT/bin/hextunnel-private-upgrade" "$@"
 fi
 
+architecture="$(uname -m)"
+case "$architecture" in
+  aarch64|arm64)
+    [[ -f "$ROOT/install.sh" ]] || private_install_error "El paquete no contiene el instalador modular."
+    [[ -f "$ROOT/bin/hextunnel-arm64-menu" ]] || private_install_error "El paquete no contiene el menú ARM64."
+    [[ -f "$ROOT/bin/hextunnel-install-license-runtime" ]] \
+      || private_install_error "El paquete no contiene el runtime de licencia."
+
+    export HEXTUNNEL_PACKAGE_ROOT="$ROOT"
+    export HEXTUNNEL_PRIVATE_PACKAGE_ROOT="$ROOT"
+    export HEXTUNNEL_NO_REBOOT=1
+
+    printf 'Arquitectura ARM64 detectada. Instalando el perfil nativo verificado...\n'
+    bash "$ROOT/install.sh" install \
+      --modules=ssh,xray,hysteria,hysteria2,zivpn,webmin \
+      --non-interactive \
+      --no-reboot
+
+    install -m 0755 "$ROOT/bin/hextunnel-arm64-menu" /usr/local/bin/menu
+    bash /opt/hextunnel/bin/hextunnel-install-license-runtime
+
+    printf '\nInstalación ARM64 completada.\n'
+    printf 'Panel: sudo menu\n'
+    printf 'Estado: sudo hextunnel status\n'
+    printf 'Licencia: sudo hextunnel-license status\n'
+    printf 'Actualización: sudo hextunnel-upgrade\n'
+    exit 0
+    ;;
+  x86_64|amd64)
+    ;;
+  *)
+    private_install_error "Arquitectura no soportada: $architecture. Usa amd64/x86_64 o arm64/aarch64."
+    ;;
+esac
+
 LEGACY_INSTALLER="$ROOT/legacy/install-all.sh"
 PREFLIGHT="$ROOT/bin/hextunnel-legacy-preflight"
 FINALIZER="$ROOT/bin/hextunnel-finalize-install"
