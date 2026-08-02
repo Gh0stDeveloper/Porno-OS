@@ -1,0 +1,316 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+ROOT="${HEXTUNNEL_INSTALL_DIR:-/opt/hextunnel}"
+[[ -f "$ROOT/lib/common.sh" ]] || ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+for file in common logging backup rollback systemd firewall secrets validation modules; do
+  # shellcheck disable=SC1090
+  source "$ROOT/lib/$file.sh"
+done
+init_logging
+load_runtime_config
+load_hextunnel_secrets
+load_module_registry
+
+usage() {
+  cat <<'EOF'
+hextunnel-backup create [--output archivo.tar.gz] [--age-recipient RECIPIENT]
+hextunnel-backup verify <archivo.tar.gz|archivo.tar.gz.age> [--identity clave-age]
+hextunnel-backup list <archivo.tar.gz|archivo.tar.gz.age> [--identity clave-age]
+hextunnel-backup restore <archivo.tar.gz|archivo.tar.gz.age> --confirm-host HOST [--identity clave-age] [--dry-run]
+EOF
+}
+
+backup_paths_list() {
+  cat <<'EOF'
+etc/hextunnel
+etc/deekayvpn
+etc/xray
+etc/hysteria
+etc/hysteria1
+etc/hysteria2
+etc/udp-custom
+etc/zivpn
+etc/slowdns
+etc/slipstream
+etc/socksproxy
+etc/webmin
+etc/nginx
+etc/squid
+etc/haproxy
+etc/sslh
+etc/letsencrypt/live
+etc/letsencrypt/archive
+etc/letsencrypt/renewal
+etc/letsencrypt/renewal-hooks
+etc/ssh/sshd_config
+etc/ssh/sshd_config.d/90-hextunnel.conf
+etc/pam.d/common-password
+etc/shells
+etc/stunnel
+etc/default/hextunnel-slowdns
+etc/default/stunnel4
+etc/default/sslh
+etc/dnsdist/dnsdist.conf
+etc/danted.conf
+etc/fail2ban/jail.d/hextunnel-sshd.local
+etc/deekaystartup
+etc/zorro-luffy
+etc/cron.d/service-checker
+etc/cron.d/logrotate
+etc/cron.d/xray-expiry
+etc/cron.d/hysteria-expiry
+etc/cron.d/hysteria2-expiry
+etc/cron.d/certbot-renew
+etc/sysctl.d/99-freenet-tuning.conf
+etc/security/limits.d/99-freenet.conf
+etc/systemd/system/ws-proxy@.service
+etc/systemd/system/server-sldns.service
+etc/systemd/system/badvpn.service
+etc/systemd/system/udp-custom.service
+etc/systemd/system/xray.service
+etc/systemd/system/slipstream.service
+etc/systemd/system/hysteria-server.service
+etc/systemd/system/hysteria-nat.service
+etc/systemd/system/hysteria2-server.service
+etc/systemd/system/zivpn.service
+etc/systemd/system/zivpn-nat.service
+etc/systemd/system/deekaystartup.service
+root/udp
+home/vps/public_html
+usr/local/bin/menu
+usr/local/bin/xray
+usr/local/bin/hysteria2
+usr/local/bin/zivpn
+usr/local/bin/sldns-server
+usr/local/bin/udp-custom
+usr/local/sbin/xray-install-version
+usr/local/libexec/hysteria2-auth
+usr/local/libexec/hextunnel
+usr/local/libexec/hextunnel-badvpn-udpgw
+usr/bin/menu
+usr/bin/Menu
+usr/bin/badvpn-udpgw
+opt/slipstream-rust
+var/lib/hextunnel
+opt/hextunnel
+EOF
+}
+
+backup_allowed_entry() {
+  local entry="${1#./}" allowed
+  entry="${entry%/}"
+  [[ -n "$entry" ]] || return 0
+  [[ "$entry" != var/lib/hextunnel/operation.lock ]] || return 1
+  while IFS= read -r allowed; do
+    [[ "$entry" == "$allowed" || "$entry" == "$allowed/"* ]] && return 0
+  done < <(backup_paths_list)
+  return 1
+}
+
+backup_verify_checksum_if_present() {
+  local archive="$1" checksum="${archive}.sha256"
+  [[ -f "$checksum" ]] || return 0
+  (cd "$(dirname "$archive")" && sha256sum -c "$(basename "$checksum")" >/dev/null) \
+    || die "El SHA-256 externo del respaldo no coincide."
+}
+
+backup_verify_plain() {
+  local archive="$1" entry
+  [[ -s "$archive" ]] || die "El archivo de respaldo está vacío."
+  backup_verify_checksum_if_present "$archive"
+  while IFS= read -r entry; do
+    [[ -n "$entry" ]] || continue
+    [[ "$entry" != /* && "$entry" != ../* && "$entry" != */../* && "$entry" != *'/..' ]] \
+      || die "El respaldo contiene una ruta insegura: $entry"
+    backup_allowed_entry "$entry" || die "El respaldo contiene una ruta no administrada: $entry"
+  done < <(tar -tzf "$archive")
+  tar -tzf "$archive" >/dev/null
+}
+
+backup_materialize_plain() {
+  local archive="$1" identity="$2" destination="$3"
+  backup_verify_checksum_if_present "$archive"
+  if [[ "$archive" == *.age ]]; then
+    command_exists age || die "Instala age para usar el respaldo cifrado."
+    [[ -n "$identity" && -r "$identity" ]] || die "Indica --identity para descifrar el respaldo."
+    age -d -i "$identity" -o "$destination" "$archive"
+  else
+    cp -- "$archive" "$destination"
+  fi
+  backup_verify_plain "$destination"
+}
+
+backup_create() {
+  require_root
+  local output="" recipient="" work manifest archive path
+  while (($# > 0)); do
+    case "$1" in
+      --output) shift; output="${1:-}" ;;
+      --age-recipient) shift; recipient="${1:-}" ;;
+      *) die "Opción desconocida: $1" ;;
+    esac
+    shift
+  done
+  ensure_dir 700 /var/backups/hextunnel
+  output="${output:-/var/backups/hextunnel/hextunnel-$(date +%Y%m%d-%H%M%S).tar.gz}"
+  work="$(mktemp -d /tmp/hextunnel-export.XXXXXX)"
+  trap 'rm -rf "${work:-}"' RETURN
+  manifest="$work/paths.txt"
+  while IFS= read -r path; do
+    [[ -e "/$path" || -L "/$path" ]] && printf '%s\n' "$path" >> "$manifest"
+  done < <(backup_paths_list)
+  [[ -s "$manifest" ]] || die "No se encontraron rutas administradas para respaldar."
+  archive="$work/backup.tar.gz"
+  tar --acls --xattrs --numeric-owner --one-file-system \
+    --exclude=var/lib/hextunnel/operation.lock \
+    -C / -czf "$archive" -T "$manifest"
+  backup_verify_plain "$archive"
+  install -d -m 700 "$(dirname "$output")"
+  if [[ -n "$recipient" ]]; then
+    command_exists age || die "Instala age para exportar un respaldo cifrado."
+    age -r "$recipient" -o "${output}.age" "$archive"
+    chmod 600 "${output}.age"
+    (cd "$(dirname "${output}.age")" && sha256sum "$(basename "${output}.age")") > "${output}.age.sha256"
+    chmod 600 "${output}.age.sha256"
+    printf 'Respaldo cifrado: %s\n' "${output}.age"
+  else
+    install -m 600 "$archive" "$output"
+    (cd "$(dirname "$output")" && sha256sum "$(basename "$output")") > "${output}.sha256"
+    chmod 600 "${output}.sha256"
+    printf 'Respaldo: %s\n' "$output"
+  fi
+}
+
+backup_parse_read_options() {
+  BACKUP_ARCHIVE="${1:-}"
+  BACKUP_IDENTITY=""
+  [[ -n "$BACKUP_ARCHIVE" ]] || { usage; exit 64; }
+  shift || true
+  while (($# > 0)); do
+    case "$1" in
+      --identity) shift; BACKUP_IDENTITY="${1:-}" ;;
+      *) die "Opción desconocida: $1" ;;
+    esac
+    shift
+  done
+}
+
+backup_verify() {
+  local work plain
+  backup_parse_read_options "$@"
+  work="$(mktemp -d /tmp/hextunnel-backup-verify.XXXXXX)"
+  trap 'rm -rf "${work:-}"' RETURN
+  plain="$work/backup.tar.gz"
+  backup_materialize_plain "$BACKUP_ARCHIVE" "$BACKUP_IDENTITY" "$plain"
+  printf 'Respaldo válido: %s\n' "$BACKUP_ARCHIVE"
+}
+
+backup_list() {
+  local work plain
+  backup_parse_read_options "$@"
+  work="$(mktemp -d /tmp/hextunnel-backup-list.XXXXXX)"
+  trap 'rm -rf "${work:-}"' RETURN
+  plain="$work/backup.tar.gz"
+  backup_materialize_plain "$BACKUP_ARCHIVE" "$BACKUP_IDENTITY" "$plain"
+  tar -tzf "$plain"
+}
+
+backup_validate_staged_links() {
+  local stage="$1" link target
+  while IFS= read -r -d '' link; do
+    target="$(readlink "$link")"
+    [[ "$target" != /* && "$target" != ../* && "$target" != */../* && "$target" != *'/..' ]] \
+      || die "El respaldo contiene un enlace simbólico inseguro: ${link#"$stage/"} -> $target"
+  done < <(find "$stage" -type l -print0)
+}
+
+backup_restart_unit() {
+  local unit="$1"
+  systemctl list-unit-files "$unit" >/dev/null 2>&1 || return 0
+  systemctl try-restart "$unit" >/dev/null 2>&1 || log_warn "No se pudo reiniciar $unit"
+}
+
+backup_restore_services() {
+  local unit
+  systemctl daemon-reload
+  for unit in \
+    ssh.service sshd.service stunnel4.service sslh.service hextunnel-sslh.service \
+    nginx.service squid.service xray.service hextunnel-xray-grpc.service \
+    hysteria-server.service hysteria1.service hysteria2-server.service hysteria2.service \
+    udp-custom.service badvpn.service badvpn-udpgw.service server-sldns.service slowdns.service \
+    slipstream.service slipstream-server.service dnsdist.service danted.service \
+    zivpn.service webmin.service fail2ban.service deekaystartup.service hextunnel-health.timer; do
+    backup_restart_unit "$unit"
+  done
+  while IFS= read -r unit; do
+    [[ -n "$unit" ]] || continue
+    systemctl try-restart "$unit" >/dev/null 2>&1 || log_warn "No se pudo reiniciar $unit"
+  done < <(systemctl list-units --all --type=service 'ws-proxy@*.service' --no-legend --plain 2>/dev/null | awk '{print $1}')
+}
+
+backup_restore() {
+  require_root
+  local archive="${1:-}" identity="" confirm_host="" dry_run=0 work plain stage current_host prebackup lock_file
+  [[ -n "$archive" ]] || { usage; exit 64; }
+  shift || true
+  while (($# > 0)); do
+    case "$1" in
+      --identity) shift; identity="${1:-}" ;;
+      --confirm-host) shift; confirm_host="${1:-}" ;;
+      --dry-run) dry_run=1 ;;
+      *) die "Opción desconocida: $1" ;;
+    esac
+    shift
+  done
+  current_host="$(hostname)"
+  [[ -n "$confirm_host" && "$confirm_host" == "$current_host" ]] \
+    || die "Confirma el VPS con --confirm-host $current_host"
+  command_exists flock || die "flock es obligatorio para restaurar."
+  lock_file="$HEXTUNNEL_OPERATION_LOCK_FILE"
+  install -d -m 755 "$(dirname "$lock_file")"
+  exec 9>>"$lock_file"
+  flock -n 9 || die "Otra operación de Hex Tunnel está en curso."
+  printf 'pid=%s\noperation=restore\nstarted_at=%s\n' "$$" "$(date -Is)" > "$lock_file"
+  chmod 600 "$lock_file"
+
+  work="$(mktemp -d /tmp/hextunnel-restore.XXXXXX)"
+  trap 'rm -rf "${work:-}"' RETURN
+  plain="$work/backup.tar.gz"
+  stage="$work/stage"
+  mkdir -p "$stage"
+  backup_materialize_plain "$archive" "$identity" "$plain"
+  tar --acls --xattrs --numeric-owner -xzf "$plain" -C "$stage"
+  backup_validate_staged_links "$stage"
+
+  if [[ "$dry_run" == 1 ]]; then
+    printf 'Restauración validada sin aplicar cambios. Rutas:\n'
+    tar -tzf "$plain"
+    return 0
+  fi
+
+  prebackup="/var/backups/hextunnel/pre-restore-$(date +%Y%m%d-%H%M%S).tar.gz"
+  backup_create --output "$prebackup"
+  printf 'Respaldo preventivo creado: %s\n' "$prebackup"
+
+  tar -C "$stage" --acls --xattrs --numeric-owner -cf - . \
+    | tar -C / --acls --xattrs --numeric-owner --overwrite -xf -
+  backup_restore_services
+  install -d -m 700 "$HEXTUNNEL_STATE"
+  cat > "$HEXTUNNEL_STATE/last-restore.env" <<EOF
+HEXTUNNEL_RESTORED_AT=$(printf '%q' "$(date -u +%Y-%m-%dT%H:%M:%SZ)")
+HEXTUNNEL_RESTORED_FROM=$(printf '%q' "$archive")
+HEXTUNNEL_PRE_RESTORE_BACKUP=$(printf '%q' "$prebackup")
+EOF
+  chmod 600 "$HEXTUNNEL_STATE/last-restore.env"
+  printf 'Restauración aplicada. Ejecuta: sudo hextunnel doctor\n'
+}
+
+case "${1:-help}" in
+  create) shift; backup_create "$@" ;;
+  verify) shift; backup_verify "$@" ;;
+  list) shift; backup_list "$@" ;;
+  restore) shift; backup_restore "$@" ;;
+  help|--help|-h) usage ;;
+  *) usage; exit 64 ;;
+esac

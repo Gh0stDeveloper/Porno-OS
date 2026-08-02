@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+upgrade_error(){ printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+[[ "${EUID:-$(id -u)}" -eq 0 ]] || upgrade_error "La actualización requiere root."
+[[ "${HEXTUNNEL_LICENSE_PREVALIDATED:-0}" == 1 ]] || upgrade_error "La actualización requiere una autorización de licencia válida."
+
+ROOT="${HEXTUNNEL_PRIVATE_PACKAGE_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)}"
+[[ -f "$ROOT/lib/common.sh" && -f "$ROOT/lib/framework.sh" ]] || upgrade_error "Paquete de actualización incompleto."
+export HEXTUNNEL_ROOT="$ROOT"
+
+for file in common logging backup rollback systemd firewall nat secrets validation modules framework; do
+  # shellcheck disable=SC1090
+  source "$ROOT/lib/$file.sh"
+done
+
+require_root
+init_logging
+load_runtime_config
+load_hextunnel_secrets
+load_module_registry
+HEXTUNNEL_DRY_RUN=0
+HEXTUNNEL_NON_INTERACTIVE=1
+HEXTUNNEL_NO_REBOOT=1
+HEXTUNNEL_FORCE=1
+export HEXTUNNEL_DRY_RUN HEXTUNNEL_NON_INTERACTIVE HEXTUNNEL_NO_REBOOT HEXTUNNEL_FORCE
+
+installed_modules=()
+for module in "${HEXTUNNEL_AVAILABLE_MODULES[@]}"; do
+  module_is_installed "$module" && installed_modules+=("$module")
+done
+
+transaction_begin licensed-framework-upgrade
+trap 'transaction_fail "$?" "$LINENO" "$BASH_COMMAND"' ERR INT TERM
+
+backup_paths \
+  /usr/local/bin/menu \
+  /usr/local/lib/hextunnel/menu-original \
+  /usr/local/bin/hextunnel-license \
+  /usr/local/bin/hextunnel-upgrade \
+  /etc/systemd/system/hextunnel-license-renew.service \
+  /etc/systemd/system/hextunnel-license-renew.timer
+
+install_framework
+bash /opt/hextunnel/bin/hextunnel-install-license-runtime
+
+for module in "${installed_modules[@]}"; do
+  module_validate "$module"
+done
+
+/usr/local/bin/hextunnel version
+/usr/local/bin/hextunnel-license status >/dev/null
+systemctl is-enabled --quiet hextunnel-license-renew.timer
+systemctl is-active --quiet hextunnel-license-renew.timer
+
+transaction_commit
+trap - ERR INT TERM
+
+printf 'Hex Tunnel actualizado y validado de forma transaccional.\n'
+printf 'Módulos comprobados: %s\n' "${installed_modules[*]:-ninguno}"
+printf 'Comprueba el sistema con: sudo hextunnel doctor\n'
+printf 'Estado de licencia: sudo hextunnel-license status\n'

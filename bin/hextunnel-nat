@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+ROOT="${HEXTUNNEL_INSTALL_DIR:-/opt/hextunnel}"
+[[ -f "$ROOT/lib/common.sh" ]] || ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+for file in common logging backup rollback systemd firewall nat; do
+  # shellcheck disable=SC1090
+  source "$ROOT/lib/$file.sh"
+done
+HEXTUNNEL_DRY_RUN="${HEXTUNNEL_DRY_RUN:-0}"
+init_logging
+load_runtime_config
+case "${1:-}" in
+  apply) [[ -n "${2:-}" ]] || die "Indica el perfil NAT."; nat_apply "$2" ;;
+  remove) [[ -n "${2:-}" ]] || die "Indica el perfil NAT."; nat_remove "$2" ;;
+  status) [[ -n "${2:-}" ]] || die "Indica el perfil NAT."; nat_is_present "$2" ;;
+  *) printf 'Uso: hextunnel-nat <apply|remove|status> <zivpn|hysteria1>\n' >&2; exit 64 ;;
+esac

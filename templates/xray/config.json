@@ -1,0 +1,206 @@
+{
+  "log": {
+    "access": "none",
+    "error": "/var/log/xray/error.log",
+    "loglevel": "error"
+  },
+  "inbounds": [
+    {
+      "tag": "vless-tls-dispatcher",
+      "port": 443,
+      "protocol": "vless",
+      "settings": {
+        "clients": [],
+        "decryption": "none",
+        "fallbacks": [
+          { "path": "/httpupgrade", "dest": 10005, "xver": 2 },
+          { "path": "/vless-tcp", "dest": 10007, "xver": 2 },
+          { "path": "/vmess-hup", "dest": 10011, "xver": 2 },
+          { "path": "/vmess-tcp", "dest": 10008, "xver": 2 },
+          { "path": "/trojan", "dest": 10013, "xver": 2 },
+          { "path": "/vless", "dest": 10003, "xver": 2 },
+          { "path": "/vmess", "dest": 10009, "xver": 2 },
+          { "alpn": "h2", "dest": 10444, "xver": 2 },
+          { "dest": 666 }
+        ]
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {
+          "alpn": ["h2", "http/1.1"],
+          "certificates": [
+            { "certificateFile": "/etc/xray/xray.crt", "keyFile": "/etc/xray/xray.key" }
+          ]
+        },
+        "sockopt": { "tcpFastOpen": true }
+      }
+    },
+    {
+      "tag": "vless-tcp-http",
+      "listen": "127.0.0.1",
+      "port": 10007,
+      "protocol": "vless",
+      "settings": { "clients": [], "decryption": "none" },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "none",
+        "tcpSettings": { "header": { "type": "http", "request": { "path": ["/vless-tcp"] } } },
+        "sockopt": { "acceptProxyProtocol": true, "tcpFastOpen": true }
+      }
+    },
+    {
+      "tag": "vless-plain-public",
+      "port": "80,8080,8880",
+      "protocol": "vless",
+      "settings": {
+        "clients": [],
+        "decryption": "none",
+        "fallbacks": [
+          { "path": "/vless-tcp", "dest": 10007, "xver": 2 },
+          { "path": "/vmess-tcp", "dest": 10008, "xver": 2 },
+          { "path": "/vmess-hup", "dest": 10011, "xver": 2 },
+          { "path": "/vless", "dest": 10003, "xver": 2 },
+          { "path": "/vmess", "dest": 10009, "xver": 2 },
+          { "path": "/httpupgrade", "dest": 10005, "xver": 2 },
+          { "dest": 10080 }
+        ]
+      },
+      "streamSettings": { "network": "tcp", "security": "none" }
+    },
+    {
+      "tag": "vless-ws",
+      "listen": "127.0.0.1",
+      "port": 10003,
+      "protocol": "vless",
+      "settings": { "clients": [], "decryption": "none" },
+      "streamSettings": {
+        "network": "ws",
+        "security": "none",
+        "wsSettings": { "path": "/vless" },
+        "sockopt": { "acceptProxyProtocol": true, "tcpFastOpen": true }
+      }
+    },
+    {
+      "tag": "vless-xhttp",
+      "listen": "127.0.0.1",
+      "port": 10004,
+      "protocol": "vless",
+      "settings": { "clients": [], "decryption": "none" },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "none",
+        "xhttpSettings": { "path": "/xhttp", "mode": "auto" },
+        "sockopt": { "acceptProxyProtocol": true, "tcpFastOpen": true }
+      }
+    },
+    {
+      "tag": "vless-httpupgrade",
+      "listen": "127.0.0.1",
+      "port": 10005,
+      "protocol": "vless",
+      "settings": { "clients": [], "decryption": "none" },
+      "streamSettings": {
+        "network": "httpupgrade",
+        "security": "none",
+        "httpupgradeSettings": { "path": "/httpupgrade", "host": "" },
+        "sockopt": { "acceptProxyProtocol": true, "tcpFastOpen": true }
+      }
+    },
+    {
+      "tag": "vless-grpc",
+      "listen": "127.0.0.1",
+      "port": 10006,
+      "protocol": "vless",
+      "settings": { "clients": [], "decryption": "none" },
+      "streamSettings": {
+        "network": "grpc",
+        "security": "none",
+        "grpcSettings": { "serviceName": "grpc-svc" },
+        "sockopt": { "acceptProxyProtocol": true, "tcpFastOpen": true }
+      }
+    },
+    {
+      "tag": "vmess-tcp-http",
+      "listen": "127.0.0.1",
+      "port": 10008,
+      "protocol": "vmess",
+      "settings": { "clients": [] },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "none",
+        "tcpSettings": { "header": { "type": "http", "request": { "path": ["/vmess-tcp"] } } },
+        "sockopt": { "acceptProxyProtocol": true, "tcpFastOpen": true }
+      }
+    },
+    {
+      "tag": "vmess-ws",
+      "listen": "127.0.0.1",
+      "port": 10009,
+      "protocol": "vmess",
+      "settings": { "clients": [] },
+      "streamSettings": {
+        "network": "ws",
+        "security": "none",
+        "wsSettings": { "path": "/vmess" },
+        "sockopt": { "acceptProxyProtocol": true, "tcpFastOpen": true }
+      }
+    },
+    {
+      "tag": "vmess-xhttp",
+      "listen": "127.0.0.1",
+      "port": 10010,
+      "protocol": "vmess",
+      "settings": { "clients": [] },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "none",
+        "xhttpSettings": { "path": "/vmess-xhttp", "mode": "auto" },
+        "sockopt": { "acceptProxyProtocol": true, "tcpFastOpen": true }
+      }
+    },
+    {
+      "tag": "vmess-httpupgrade",
+      "listen": "127.0.0.1",
+      "port": 10011,
+      "protocol": "vmess",
+      "settings": { "clients": [] },
+      "streamSettings": {
+        "network": "httpupgrade",
+        "security": "none",
+        "httpupgradeSettings": { "path": "/vmess-hup", "host": "" },
+        "sockopt": { "acceptProxyProtocol": true, "tcpFastOpen": true }
+      }
+    },
+    {
+      "tag": "vmess-grpc",
+      "listen": "127.0.0.1",
+      "port": 10012,
+      "protocol": "vmess",
+      "settings": { "clients": [] },
+      "streamSettings": {
+        "network": "grpc",
+        "security": "none",
+        "grpcSettings": { "serviceName": "vmess-grpc-svc" },
+        "sockopt": { "acceptProxyProtocol": true, "tcpFastOpen": true }
+      }
+    },
+    {
+      "tag": "trojan-ws",
+      "listen": "127.0.0.1",
+      "port": 10013,
+      "protocol": "trojan",
+      "settings": { "clients": [] },
+      "streamSettings": {
+        "network": "ws",
+        "security": "none",
+        "wsSettings": { "path": "/trojan" },
+        "sockopt": { "acceptProxyProtocol": true, "tcpFastOpen": true }
+      }
+    }
+  ],
+  "outbounds": [
+    { "protocol": "freedom", "settings": {} },
+    { "protocol": "blackhole", "settings": {}, "tag": "blocked" }
+  ]
+}

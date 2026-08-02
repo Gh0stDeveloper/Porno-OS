@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+locked_error() {
+  printf 'ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
+[[ "${EUID:-$(id -u)}" -eq 0 ]] || locked_error "La instalación de componentes debe ejecutarse como root."
+ROOT="${HEXTUNNEL_PACKAGE_ROOT:-${HEXTUNNEL_INSTALL_DIR:-/opt/hextunnel}}"
+[[ -f "$ROOT/lib/common.sh" ]] || ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+# shellcheck disable=SC1090
+source "$ROOT/lib/common.sh"
+# shellcheck disable=SC1090
+source "$ROOT/lib/logging.sh"
+init_logging
+load_runtime_config
+
+locked_download() {
+  local url="$1" expected="$2" output="$3" actual
+  [[ "$url" == https://* ]] || locked_error "La URL del componente debe usar HTTPS."
+  [[ "$expected" =~ ^[0-9a-fA-F]{64}$ ]] || locked_error "El componente no tiene un SHA-256 bloqueado."
+  install -d -m 700 "$(dirname "$output")"
+  curl -fL --retry 4 --retry-all-errors --connect-timeout 15 --max-time 300 -o "$output" "$url"
+  [[ -s "$output" ]] || locked_error "La descarga del componente está vacía."
+  actual="$(sha256sum "$output" | awk '{print tolower($1)}')"
+  [[ "$actual" == "${expected,,}" ]] || locked_error "El SHA-256 del componente no coincide."
+}
+
+install_slowdns() {
+  local tmp
+  tmp="$(mktemp /tmp/hextunnel-slowdns.XXXXXX)"
+  trap 'rm -f "${tmp:-}"' RETURN
+  locked_download "${HEXTUNNEL_SLOWDNS_BINARY_URL:-}" "${HEXTUNNEL_SLOWDNS_SHA256:-}" "$tmp"
+  install -d -m 700 /etc/slowdns
+  install -m 755 "$tmp" /etc/slowdns/sldns-server
+}
+
+install_sing_box() {
+  local tmp
+  tmp="$(mktemp /tmp/hextunnel-sing-box.XXXXXX.deb)"
+  trap 'rm -f "${tmp:-}"' RETURN
+  locked_download "${HEXTUNNEL_SINGBOX_BINARY_URL:-}" "${HEXTUNNEL_SINGBOX_SHA256:-}" "$tmp"
+  dpkg -i "$tmp" || apt-get install -f -y
+  command -v sing-box >/dev/null 2>&1 || locked_error "sing-box no quedó instalado."
+  apt-mark hold sing-box >/dev/null 2>&1 || true
+}
+
+install_badvpn() {
+  local work archive source build
+  apt-get update -y
+  apt-get install -y --no-install-recommends cmake make gcc libc6-dev tar ca-certificates
+  work="$(mktemp -d /tmp/hextunnel-badvpn.XXXXXX)"
+  trap 'rm -rf "${work:-}"' RETURN
+  archive="$work/source.tar.gz"
+  locked_download "${HEXTUNNEL_BADVPN_SOURCE_URL:-}" "${HEXTUNNEL_BADVPN_SHA256:-}" "$archive"
+  tar -xzf "$archive" -C "$work"
+  source="$(find "$work" -mindepth 1 -maxdepth 1 -type d | head -n1)"
+  [[ -f "$source/CMakeLists.txt" ]] || locked_error "El código fuente de BadVPN es inválido."
+  build="$work/build"
+  cmake -S "$source" -B "$build" \
+    -DBUILD_NOTHING_BY_DEFAULT=1 \
+    -DBUILD_UDPGW=1 \
+    -DCMAKE_BUILD_TYPE=Release
+  cmake --build "$build" --target badvpn-udpgw --parallel "$(nproc)"
+  [[ -x "$build/udpgw/badvpn-udpgw" ]] || locked_error "No se generó badvpn-udpgw."
+  install -m 755 "$build/udpgw/badvpn-udpgw" /usr/bin/badvpn-udpgw
+}
+
+install_udp_custom() {
+  local tmp
+  tmp="$(mktemp /tmp/hextunnel-udp-custom.XXXXXX)"
+  trap 'rm -f "${tmp:-}"' RETURN
+  locked_download "${HEXTUNNEL_UDP_CUSTOM_BINARY_URL:-}" "${HEXTUNNEL_UDP_CUSTOM_SHA256:-}" "$tmp"
+  install -d -m 700 /root/udp
+  install -m 755 "$tmp" /root/udp/udp-custom
+  jq -n '{listen:":36717",stream_buffer:33554432,receive_buffer:83886080,auth:{mode:"passwords"}}' \
+    > /root/udp/config.json
+  chmod 600 /root/udp/config.json
+}
+
+install_zivpn() {
+  local tmp
+  tmp="$(mktemp /tmp/hextunnel-zivpn.XXXXXX)"
+  trap 'rm -f "${tmp:-}"' RETURN
+  locked_download "${HEXTUNNEL_ZIVPN_BINARY_URL:-}" "${HEXTUNNEL_ZIVPN_SHA256:-}" "$tmp"
+  install -m 755 "$tmp" /usr/local/bin/zivpn
+}
+
+case "${1:-}" in
+  slowdns) install_slowdns ;;
+  sing-box) install_sing_box ;;
+  badvpn) install_badvpn ;;
+  udp-custom) install_udp_custom ;;
+  zivpn) install_zivpn ;;
+  *) locked_error "Componente desconocido: ${1:-vacío}" ;;
+esac

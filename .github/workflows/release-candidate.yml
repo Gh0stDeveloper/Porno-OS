@@ -1,0 +1,50 @@
+name: Release candidate
+on:
+  push:
+    branches: ['feat/**', 'fix/**', 'release/**', 'main']
+  pull_request:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  production-readiness:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Install validation tools
+        run: sudo apt-get update -y && sudo apt-get install -y shellcheck jq curl ca-certificates
+      - name: Resolve immutable component lock
+        run: bash scripts/resolve-component-lock.sh config/component-lock.env
+      - name: Run production readiness gate
+        shell: bash
+        env:
+          HEXTUNNEL_RELEASE_BUILD: '1'
+        run: |
+          set -o pipefail
+          bash -x scripts/production-readiness.sh 2>&1 | tee /tmp/production-readiness.log
+      - name: Build release candidate
+        run: SOURCE_DATE_EPOCH=1700000000 bash scripts/build-release.sh dist
+      - name: Upload release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: hextunnel-release-candidate
+          path: |
+            config/component-lock.env
+            dist/*.tar.gz
+            dist/*.sha256
+            dist/*.files.txt
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload release diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-gate-diagnostics-${{ github.run_id }}
+          path: /tmp/production-readiness.log
+          if-no-files-found: warn
+          retention-days: 7

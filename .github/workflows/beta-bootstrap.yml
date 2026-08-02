@@ -1,0 +1,26 @@
+name: Private beta bootstrap
+on:
+  push:
+    branches: ['feat/**', 'fix/**', 'main']
+  pull_request:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  verify-beta-package:
+    runs-on: ubuntu-latest
+    env:
+      BETA_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify pinned beta archive and entrypoint
+        run: |
+          sudo env \
+            HEXTUNNEL_BETA_ACK=ACEPTO_BETA_PRIVADA \
+            HEXTUNNEL_BETA_REF="$BETA_SOURCE_SHA" \
+            HEXTUNNEL_BETA_VERIFY_ONLY=1 \
+            bash ./beta-install.sh

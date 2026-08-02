@@ -1,0 +1,164 @@
+name: SlipStream Debian 12 integration
+on:
+  push:
+    branches: [feat/transactional-architecture]
+    paths:
+      - install.sh
+      - bin/**
+      - lib/**
+      - modules/ssh.sh
+      - modules/slowdns.sh
+      - modules/slipstream.sh
+      - .github/workflows/slipstream-debian12-integration.yml
+  pull_request:
+    paths:
+      - install.sh
+      - bin/**
+      - lib/**
+      - modules/ssh.sh
+      - modules/slowdns.sh
+      - modules/slipstream.sh
+      - .github/workflows/slipstream-debian12-integration.yml
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  slipstream-debian12:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and start Debian 12 systemd
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cat > /tmp/Dockerfile.slipstream-debian <<'EOF'
+          FROM debian:12
+          ENV container=docker
+          ENV DEBIAN_FRONTEND=noninteractive
+          RUN apt-get update \
+              && apt-get install -y --no-install-recommends systemd systemd-sysv dbus ca-certificates curl jq iproute2 procps \
+              && apt-get clean \
+              && rm -rf /var/lib/apt/lists/*
+          STOPSIGNAL SIGRTMIN+3
+          CMD ["/sbin/init"]
+          EOF
+          docker build -t slipstream-debian12 -f /tmp/Dockerfile.slipstream-debian .
+          docker run -d \
+            --name slipstream-debian12 \
+            --hostname slipstream-debian12 \
+            --privileged \
+            --cgroupns=host \
+            --tmpfs /run \
+            --tmpfs /run/lock \
+            -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
+            -v "$PWD:/workspace:ro" \
+            slipstream-debian12
+          for _ in $(seq 1 60); do
+            state="$(docker exec slipstream-debian12 systemctl is-system-running 2>/dev/null || true)"
+            [[ "$state" == running || "$state" == degraded ]] && break
+            sleep 1
+          done
+
+      - name: Prepare verified configuration
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          url=https://raw.githubusercontent.com/fisabiliyusri/SLDNS/main/slowdns/sldns-server
+          curl -fL --retry 3 -o /tmp/sldns-server "$url"
+          sha="$(sha256sum /tmp/sldns-server | awk '{print tolower($1)}')"
+          cat > /tmp/slipstream-debian.env <<EOF
+          HEXTUNNEL_ALLOW_ROOT_PASSWORD=0
+          HEXTUNNEL_ADMIN_IP=127.0.0.1/32
+          HEXTUNNEL_SLOWDNS_NS=ns-debian-ci.example.test
+          HEXTUNNEL_SLOWDNS_LISTEN_ADDRESS=127.0.0.1
+          HEXTUNNEL_SLOWDNS_LISTEN_PORT=5353
+          HEXTUNNEL_SLOWDNS_BINARY_URL=$url
+          HEXTUNNEL_SLOWDNS_SHA256=$sha
+          HEXTUNNEL_SLIPSTREAM_DOMAIN=slip-debian-ci.example.test
+          HEXTUNNEL_SLIPSTREAM_DNS_ADDRESS=127.0.0.1
+          HEXTUNNEL_SLIPSTREAM_DNS_PORT=5354
+          HEXTUNNEL_SLIPSTREAM_COMMIT=bc772dd07d9a136dbd7553b0da575526de207847
+          HEXTUNNEL_RUST_ROOT=/opt/hextunnel-rust
+          HEXTUNNEL_RUST_TOOLCHAIN=1.97.0
+          EOF
+          cat > /tmp/slipstream-debian-secrets.env <<'EOF'
+          HEXTUNNEL_TELEGRAM_CHAT_ID=""
+          HEXTUNNEL_TELEGRAM_BOT_TOKEN=""
+          EOF
+          docker exec slipstream-debian12 install -d -m 700 /etc/hextunnel
+          docker cp /tmp/slipstream-debian.env slipstream-debian12:/etc/hextunnel/hextunnel.env
+          docker cp /tmp/slipstream-debian-secrets.env slipstream-debian12:/etc/hextunnel/secrets.env
+          docker exec slipstream-debian12 chown root:root /etc/hextunnel/hextunnel.env /etc/hextunnel/secrets.env
+          docker exec slipstream-debian12 chmod 600 /etc/hextunnel/hextunnel.env /etc/hextunnel/secrets.env
+
+      - name: Install and validate SlipStream
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if ! docker exec slipstream-debian12 bash -lc '
+            set -Eeuo pipefail
+            cd /workspace
+            bash ./install.sh install slipstream --non-interactive --no-reboot --force \
+              2>&1 | tee /tmp/slipstream-debian-install.log
+          '; then
+            docker exec slipstream-debian12 journalctl -u slipstream -u danted -u dnsdist -u server-sldns -n 240 --no-pager || true
+            exit 1
+          fi
+          docker exec slipstream-debian12 systemctl is-active --quiet server-sldns
+          docker exec slipstream-debian12 systemctl is-active --quiet danted
+          docker exec slipstream-debian12 systemctl is-active --quiet slipstream
+          docker exec slipstream-debian12 systemctl is-active --quiet dnsdist
+          docker exec slipstream-debian12 ss -lunp | grep -q '127.0.0.1:5300'
+          docker exec slipstream-debian12 ss -lunp | grep -q '127.0.0.1:5301'
+          docker exec slipstream-debian12 ss -lunp | grep -q '127.0.0.1:5354'
+          docker exec slipstream-debian12 hextunnel doctor --report /tmp/slipstream-debian-doctor.txt
+
+      - name: Uninstall and verify restoration
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker exec slipstream-debian12 hextunnel uninstall slipstream
+          docker exec slipstream-debian12 systemctl is-active --quiet server-sldns
+          docker exec slipstream-debian12 ss -lunp | grep -q '127.0.0.1:5353'
+          docker exec slipstream-debian12 hextunnel uninstall slowdns ssh
+          docker exec slipstream-debian12 ss -lntp | grep -q ':22 '
+
+      - name: Collect diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          docker exec slipstream-debian12 bash -lc '
+            {
+              cat /etc/os-release
+              systemctl --failed --no-pager
+              for unit in server-sldns danted slipstream dnsdist; do
+                echo "=== $unit ==="
+                systemctl status "$unit" --no-pager -l
+                journalctl -u "$unit" -n 240 --no-pager
+              done
+              ss -lntup
+            } > /tmp/slipstream-debian-system.log 2>&1
+          '
+          for file in slipstream-debian-install.log slipstream-debian-doctor.txt slipstream-debian-system.log; do
+            docker cp "slipstream-debian12:/tmp/$file" "/tmp/$file" 2>/dev/null || true
+          done
+          chmod 644 /tmp/slipstream-debian-* 2>/dev/null || true
+          docker rm -f slipstream-debian12 >/dev/null 2>&1 || true
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: slipstream-debian12-${{ github.run_id }}
+          path: |
+            /tmp/slipstream-debian-install.log
+            /tmp/slipstream-debian-doctor.txt
+            /tmp/slipstream-debian-system.log
+          if-no-files-found: warn
+          retention-days: 7

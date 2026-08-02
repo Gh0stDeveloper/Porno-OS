@@ -1,0 +1,51 @@
+# Changelog
+
+## 1.0.0-rc.3 — 2026-08-01
+
+- El runtime de actualización renueva el panel ARM64 desde el paquete instalado.
+- El wrapper del menú AMD64 se reconstruye de forma segura sin sobrescribir el menú original.
+- El bootstrap de actualización valida sintaxis Bash antes de ejecutarse.
+- Las pruebas de licencia exigen que la actualización conserve y refresque el menú correspondiente a la arquitectura.
+- La publicación comercial ejecuta el gate completo de producción antes de registrar el paquete.
+
+## 1.0.0-rc.2 — 2026-08-01
+
+- Distribución comercial protegida mediante key, autorización por IP, nonce y timestamp.
+- Descarga privada temporal, de un solo uso y verificada mediante firma RSA y SHA-256.
+- Runtime de licencia con `status`, `renew`, `remaining` y renovación periódica mediante systemd.
+- Actualización privada transaccional mediante `hextunnel-upgrade`.
+- Soporte de producción para `arm64/aarch64` en Debian 12 y Ubuntu 22.04/24.04.
+- Instalación ARM64 mediante perfil modular nativo en lugar del instalador heredado AMD64.
+- Perfil ARM64 con SSH/TLS, Xray, Hysteria v1, Hysteria 2, ZiVPN y Webmin.
+- Sing-box y ZiVPN seleccionan el artefacto ARM64 y verifican el digest SHA-256 publicado por GitHub.
+- Panel `menu` específico para ARM64 con estado, diagnóstico, cuentas, licencia y actualización.
+- Validación de compatibilidad de cada módulo antes de modificar el VPS.
+- UDP Custom, SlowDNS heredado, SlipStream dependiente de SlowDNS y `legacy-all` permanecen bloqueados en ARM64 hasta disponer de artefactos oficiales, reproducibles y verificables.
+
+## 1.0.0-rc.1 — 2026-07-26
+
+- Arquitectura Bash manual y modular; sin generadores Python.
+- Instalador transaccional con respaldo, validación y rollback.
+- Bloqueo global con `flock` para impedir instalaciones, desinstalaciones, actualizaciones o rollbacks simultáneos.
+- Preflight de root, plataforma, arquitectura, systemd, reloj, RAM, disco, red y puertos.
+- Soporte de producción delimitado a Debian 12, Ubuntu 22.04 LTS y Ubuntu 24.04 LTS sobre amd64.
+- Firewall reversible compatible con UFW, nftables e iptables.
+- Módulos SSH/TLS, Xray, Hysteria v1, Hysteria 2, UDP Custom, SlowDNS, SlipStream, ZiVPN y Webmin.
+- SSLH aislado de los defaults incompatibles de Debian/Ubuntu mediante una unidad y configuración propias.
+- Compatibilidad con SSLH 1.20 usando la forma estricta `-F/ruta` y con SSLH 1.22 en Ubuntu 24.04.
+- Generación TLS compatible con hostnames largos y validación OpenSSH portable.
+- HAProxy gRPC con PID dentro de su `RuntimeDirectory` de systemd.
+- Hysteria 2 con usuario dedicado, TLS privado, validación temporal controlada y permisos de cuenta conservados.
+- Centro `hextunnel doctor`, `hextunnel preflight`, versionado central y monitor periódico sanitizado.
+- Gestión centralizada de cuentas, expiración, suspensión, reanudación y auditoría.
+- Respaldo verificable, cifrado opcional con age, listado y restauración protegida por hostname.
+- Respaldo preventivo automático antes de restaurar.
+- Actualizador por canales con manifiesto firmado y SHA-256.
+- Empaquetado reproducible con manifiesto SHA-256 interno, inventario y checksum externo.
+- Runbooks de operación, recuperación y distribución privada.
+- Canal beta privado fijado a commits inmutables para pruebas de VPS.
+- Instalador heredado sanitizado como modo de compatibilidad.
+
+## Unreleased
+
+- Validación integral pendiente en VPS AMD64 y ARM64 limpias antes de declarar la release estable.

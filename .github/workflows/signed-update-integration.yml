@@ -1,0 +1,194 @@
+name: Signed update integration
+on:
+  push:
+    branches: [feat/transactional-architecture]
+    paths:
+      - install.sh
+      - bin/hextunnel
+      - bin/hextunnel-update
+      - lib/update.sh
+      - lib/rollback.sh
+      - lib/backup.sh
+      - lib/framework.sh
+      - .github/workflows/signed-update-integration.yml
+  pull_request:
+    paths:
+      - install.sh
+      - bin/hextunnel
+      - bin/hextunnel-update
+      - lib/update.sh
+      - lib/rollback.sh
+      - lib/backup.sh
+      - lib/framework.sh
+      - .github/workflows/signed-update-integration.yml
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  signed-framework-update:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install framework and SSH foundation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo install -d -m 700 /etc/hextunnel
+          sudo tee /etc/hextunnel/hextunnel.env >/dev/null <<'EOF'
+          HEXTUNNEL_ALLOW_ROOT_PASSWORD=0
+          HEXTUNNEL_ADMIN_IP=127.0.0.1/32
+          EOF
+          sudo tee /etc/hextunnel/secrets.env >/dev/null <<'EOF'
+          HEXTUNNEL_TELEGRAM_CHAT_ID=""
+          HEXTUNNEL_TELEGRAM_BOT_TOKEN=""
+          EOF
+          sudo chmod 600 /etc/hextunnel/hextunnel.env /etc/hextunnel/secrets.env
+          sudo -E bash ./install.sh install ssh \
+            --non-interactive --no-reboot --force \
+            2>&1 | tee /tmp/signed-update-install.log
+
+      - name: Build and sign isolated update repository
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update
+          sudo apt-get install -y busybox-static jq openssl
+          work=/tmp/update-server
+          rm -rf "$work" /tmp/framework-signed-test
+          mkdir -p "$work" /tmp/framework-signed-test/hextunnel-framework
+          tar -C "$PWD" --exclude=.git -cf - . \
+            | tar -C /tmp/framework-signed-test/hextunnel-framework -xf -
+          printf 'signed-update-v2\n' > /tmp/framework-signed-test/hextunnel-framework/SIGNED-UPDATE-VERSION
+          tar -C /tmp/framework-signed-test -czf "$work/framework.tar.gz" hextunnel-framework
+          sha="$(sha256sum "$work/framework.tar.gz" | awk '{print tolower($1)}')"
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out /tmp/update-private.pem
+          openssl pkey -in /tmp/update-private.pem -pubout -out /tmp/update-public.pem
+          sudo install -m 600 -o root -g root /tmp/update-public.pem /etc/hextunnel/update-public.pem
+          jq -n --arg sha "$sha" '{
+            channel: "stable",
+            released_at: "2026-07-26T00:00:00Z",
+            components: {
+              framework: {
+                version: "signed-update-v2",
+                changelog: "CI signed update",
+                artifacts: {
+                  all: {
+                    url: "http://127.0.0.1:18080/framework.tar.gz",
+                    sha256: $sha
+                  }
+                }
+              }
+            }
+          }' > "$work/manifest.json"
+          openssl dgst -sha256 -sign /tmp/update-private.pem \
+            -out "$work/manifest.json.sig" "$work/manifest.json"
+          busybox httpd -f -p 127.0.0.1:18080 -h "$work" > /tmp/update-http.log 2>&1 &
+          echo $! > /tmp/update-http.pid
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:18080/manifest.json >/dev/null && break
+            sleep 1
+          done
+          sudo tee -a /etc/hextunnel/hextunnel.env >/dev/null <<'EOF'
+          HEXTUNNEL_STABLE_MANIFEST_URL="http://127.0.0.1:18080/manifest.json"
+          HEXTUNNEL_UPDATE_PUBLIC_KEY="/etc/hextunnel/update-public.pem"
+          HEXTUNNEL_UPDATE_ALLOW_HTTP_LOOPBACK=1
+          EOF
+
+      - name: Verify, apply, and rollback signed framework
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo hextunnel-update check --channel stable > /tmp/update-check.json
+          jq -e '.components.framework.version == "signed-update-v2"' /tmp/update-check.json
+          before="$(sudo readlink -f /var/lib/hextunnel/last-successful 2>/dev/null || true)"
+          sudo hextunnel-update apply framework --channel stable \
+            2>&1 | tee /tmp/update-apply.log
+          sudo test -s /opt/hextunnel/SIGNED-UPDATE-VERSION
+          transaction="$(sudo readlink -f /var/lib/hextunnel/last-successful)"
+          [[ "$transaction" != "$before" ]]
+          [[ "$(sudo cat "$transaction/status")" == COMMITTED ]]
+          sudo hextunnel rollback "$(basename "$transaction")" --force \
+            2>&1 | tee /tmp/update-rollback.log
+          sudo test ! -e /opt/hextunnel/SIGNED-UPDATE-VERSION
+          sudo test -x /opt/hextunnel/install.sh
+          [[ "$(sudo cat "$transaction/status")" == ROLLED_BACK ]]
+
+      - name: Reject a tampered signed manifest
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          work=/tmp/update-server
+          cp "$work/manifest.json" /tmp/manifest.valid.json
+          cp "$work/manifest.json.sig" /tmp/manifest.valid.sig
+          jq '.released_at="tampered"' "$work/manifest.json" > "$work/manifest.tampered"
+          mv "$work/manifest.tampered" "$work/manifest.json"
+          if sudo hextunnel-update check --channel stable > /tmp/tampered.out 2>&1; then
+            echo 'tampered manifest was accepted' >&2
+            exit 1
+          fi
+          grep -q 'firma del manifiesto' /tmp/tampered.out
+          cp /tmp/manifest.valid.json "$work/manifest.json"
+          cp /tmp/manifest.valid.sig "$work/manifest.json.sig"
+
+      - name: Reject a signed manifest with an incorrect artifact digest
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          work=/tmp/update-server
+          jq '.components.framework.version="bad-digest" | .components.framework.artifacts.all.sha256=("0" * 64)' \
+            "$work/manifest.json" > "$work/manifest.bad"
+          mv "$work/manifest.bad" "$work/manifest.json"
+          openssl dgst -sha256 -sign /tmp/update-private.pem \
+            -out "$work/manifest.json.sig" "$work/manifest.json"
+          if sudo hextunnel-update apply framework --channel stable > /tmp/bad-digest.out 2>&1; then
+            echo 'bad artifact digest was accepted' >&2
+            exit 1
+          fi
+          grep -q 'SHA-256 del componente framework no coincide' /tmp/bad-digest.out
+          latest="$(sudo find /var/lib/hextunnel/transactions -mindepth 1 -maxdepth 1 -type d -name '*update-framework-bad-digest*' | sort | tail -n1)"
+          [[ -n "$latest" ]]
+          [[ "$(sudo cat "$latest/status")" == ROLLED_BACK ]]
+          sudo test ! -e /opt/hextunnel/SIGNED-UPDATE-VERSION
+
+      - name: Collect signed update diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          kill "$(cat /tmp/update-http.pid 2>/dev/null)" 2>/dev/null || true
+          {
+            echo '=== transactions ==='
+            sudo find /var/lib/hextunnel/transactions -mindepth 1 -maxdepth 1 -type d -printf '%f ' -exec cat '{}/status' \;
+            echo
+            echo '=== update check ==='
+            cat /tmp/update-check.json
+            echo
+            echo '=== bad signature ==='
+            cat /tmp/tampered.out
+            echo
+            echo '=== bad digest ==='
+            cat /tmp/bad-digest.out
+          } > /tmp/signed-update-system.log 2>&1
+          chmod 644 /tmp/signed-update-*.log /tmp/update-*.log /tmp/update-check.json /tmp/tampered.out /tmp/bad-digest.out 2>/dev/null || true
+
+      - name: Upload signed update diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-update-${{ github.run_id }}
+          path: |
+            /tmp/signed-update-system.log
+            /tmp/signed-update-install.log
+            /tmp/update-http.log
+            /tmp/update-check.json
+            /tmp/update-apply.log
+            /tmp/update-rollback.log
+            /tmp/tampered.out
+            /tmp/bad-digest.out
+          if-no-files-found: warn
+          retention-days: 7

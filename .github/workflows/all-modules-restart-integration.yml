@@ -1,0 +1,315 @@
+name: All modules restart integration
+on:
+  push:
+    branches: [feat/transactional-architecture]
+    paths:
+      - install.sh
+      - bin/**
+      - lib/**
+      - modules/**
+      - config/hextunnel.env.example
+      - .github/workflows/all-modules-restart-integration.yml
+  pull_request:
+    paths:
+      - install.sh
+      - bin/**
+      - lib/**
+      - modules/**
+      - config/hextunnel.env.example
+      - .github/workflows/all-modules-restart-integration.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  all-modules-restart:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    env:
+      GH_API_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Debian 12 systemd image
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cat > /tmp/Dockerfile.hextunnel-all <<'EOF'
+          FROM debian:12
+          ENV container=docker
+          ENV DEBIAN_FRONTEND=noninteractive
+          RUN apt-get update \
+              && apt-get install -y --no-install-recommends \
+                 systemd systemd-sysv dbus ca-certificates curl jq iproute2 procps gnupg \
+              && apt-get clean \
+              && rm -rf /var/lib/apt/lists/*
+          STOPSIGNAL SIGRTMIN+3
+          CMD ["/sbin/init"]
+          EOF
+          docker build -t hextunnel-all -f /tmp/Dockerfile.hextunnel-all .
+
+      - name: Prepare verified component configuration
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl jq ca-certificates
+
+          api_get() {
+            curl -fsSL --retry 3 \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer $GH_API_TOKEN" \
+              "$1"
+          }
+          release_asset_sha() {
+            local api="$1" asset="$2" output="$3" metadata url
+            metadata="$(api_get "$api")"
+            url="$(jq -r --arg asset "$asset" '.assets[] | select(.name == $asset) | .browser_download_url' <<< "$metadata" | head -n1)"
+            [[ -n "$url" && "$url" != null ]]
+            curl -fL --retry 3 -o "$output" "$url"
+            sha256sum "$output" | awk '{print tolower($1)}'
+          }
+          url_sha() {
+            local url="$1" output="$2"
+            curl -fL --retry 3 -o "$output" "$url"
+            sha256sum "$output" | awk '{print tolower($1)}'
+          }
+
+          singbox_version=1.12.22
+          singbox_asset="sing-box_${singbox_version}_linux_amd64.deb"
+          singbox_sha="$(release_asset_sha "https://api.github.com/repos/SagerNet/sing-box/releases/tags/v${singbox_version}" "$singbox_asset" /tmp/sing-box.deb)"
+
+          udp_url=https://raw.githubusercontent.com/mahpud896/UDP-Custom/main/bin/udp-custom-linux-amd64
+          udp_sha="$(url_sha "$udp_url" /tmp/udp-custom)"
+
+          slowdns_url=https://raw.githubusercontent.com/fisabiliyusri/SLDNS/main/slowdns/sldns-server
+          slowdns_sha="$(url_sha "$slowdns_url" /tmp/sldns-server)"
+
+          badvpn_ref=1.999.130
+          badvpn_url="https://codeload.github.com/ambrop72/badvpn/tar.gz/refs/tags/${badvpn_ref}"
+          badvpn_sha="$(url_sha "$badvpn_url" /tmp/badvpn.tar.gz)"
+
+          zivpn_tag=udp-zivpn_1.4.9
+          zivpn_asset=udp-zivpn-linux-amd64
+          zivpn_sha="$(release_asset_sha "https://api.github.com/repos/zahidbd2/udp-zivpn/releases/tags/${zivpn_tag}" "$zivpn_asset" /tmp/zivpn)"
+
+          cat > /tmp/hextunnel-all.env <<EOF
+          HEXTUNNEL_DOMAIN=all-ci.example.test
+          HEXTUNNEL_ADMIN_IP=127.0.0.1/32
+          HEXTUNNEL_ALLOW_ROOT_PASSWORD=0
+          HEXTUNNEL_ALLOW_UNVERIFIED_DOWNLOADS=0
+          HEXTUNNEL_WEBMIN_PUBLIC=0
+          HEXTUNNEL_WEBMIN_PORT=10000
+          HEXTUNNEL_SINGBOX_VERSION=$singbox_version
+          HEXTUNNEL_SINGBOX_SHA256=$singbox_sha
+          HEXTUNNEL_UDP_CUSTOM_BINARY_URL=$udp_url
+          HEXTUNNEL_UDP_CUSTOM_SHA256=$udp_sha
+          HEXTUNNEL_BADVPN_REF=$badvpn_ref
+          HEXTUNNEL_BADVPN_SOURCE_URL=$badvpn_url
+          HEXTUNNEL_BADVPN_SHA256=$badvpn_sha
+          HEXTUNNEL_SLOWDNS_NS=ns-all-ci.example.test
+          HEXTUNNEL_SLOWDNS_LISTEN_ADDRESS=127.0.0.1
+          HEXTUNNEL_SLOWDNS_LISTEN_PORT=5353
+          HEXTUNNEL_SLOWDNS_BINARY_URL=$slowdns_url
+          HEXTUNNEL_SLOWDNS_SHA256=$slowdns_sha
+          HEXTUNNEL_SLIPSTREAM_DOMAIN=slip-all-ci.example.test
+          HEXTUNNEL_SLIPSTREAM_DNS_ADDRESS=127.0.0.1
+          HEXTUNNEL_SLIPSTREAM_DNS_PORT=5354
+          HEXTUNNEL_SLIPSTREAM_COMMIT=bc772dd07d9a136dbd7553b0da575526de207847
+          HEXTUNNEL_RUST_ROOT=/opt/hextunnel-rust
+          HEXTUNNEL_RUST_TOOLCHAIN=1.97.0
+          HEXTUNNEL_ZIVPN_VERSION=$zivpn_tag
+          HEXTUNNEL_ZIVPN_SHA256=$zivpn_sha
+          HEXTUNNEL_HYSTERIA1_NAT_START=36710
+          HEXTUNNEL_HYSTERIA1_NAT_END=36720
+          HEXTUNNEL_HYSTERIA1_NAT_EXEMPT=36713,36717
+          HEXTUNNEL_ZIVPN_NAT_START=6100
+          HEXTUNNEL_ZIVPN_NAT_END=6110
+          EOF
+          cat > /tmp/hextunnel-all-secrets.env <<'EOF'
+          HEXTUNNEL_TELEGRAM_CHAT_ID=""
+          HEXTUNNEL_TELEGRAM_BOT_TOKEN=""
+          EOF
+
+      - name: Start isolated systemd environment
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker run -d \
+            --name hextunnel-all \
+            --hostname hextunnel-all \
+            --privileged \
+            --cgroupns=host \
+            --tmpfs /run \
+            --tmpfs /run/lock \
+            -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
+            -v "$PWD:/workspace:ro" \
+            hextunnel-all
+          for _ in $(seq 1 60); do
+            state="$(docker exec hextunnel-all systemctl is-system-running 2>/dev/null || true)"
+            [[ "$state" == running || "$state" == degraded ]] && break
+            sleep 1
+          done
+          docker exec hextunnel-all install -d -m 700 /etc/hextunnel
+          docker cp /tmp/hextunnel-all.env hextunnel-all:/etc/hextunnel/hextunnel.env
+          docker cp /tmp/hextunnel-all-secrets.env hextunnel-all:/etc/hextunnel/secrets.env
+          docker exec hextunnel-all chown root:root /etc/hextunnel/hextunnel.env /etc/hextunnel/secrets.env
+          docker exec hextunnel-all chmod 600 /etc/hextunnel/hextunnel.env /etc/hextunnel/secrets.env
+
+      - name: Install all maintained modules
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker exec hextunnel-all bash -lc '
+            set -Eeuo pipefail
+            cd /workspace
+            bash ./install.sh install \
+              ssh xray hysteria hysteria2 udp-custom slowdns slipstream zivpn webmin \
+              --non-interactive --no-reboot --force \
+              2>&1 | tee /tmp/all-modules-install.log
+          '
+
+      - name: Validate complete installation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          inside() { docker exec hextunnel-all bash -lc "$1"; }
+          services=(
+            ssh stunnel4 hextunnel-sslh fail2ban xray hextunnel-haproxy
+            hextunnel-hysteria hextunnel-hysteria-nat hysteria2
+            udp-custom hextunnel-badvpn server-sldns slipstream dnsdist
+            zivpn hextunnel-zivpn-nat webmin
+          )
+          for service in "${services[@]}"; do
+            docker exec hextunnel-all systemctl is-active --quiet "$service"
+          done
+          docker exec hextunnel-all hextunnel-nat status hysteria1
+          docker exec hextunnel-all hextunnel-nat status zivpn
+          inside "nft -a list chain inet hextunnel_nat prerouting | grep -Fq 'hextunnel-nat:hysteria1:exempt:36713'"
+          inside "nft -a list chain inet hextunnel_nat prerouting | grep -Fq 'hextunnel-nat:hysteria1:exempt:36717'"
+          inside "ss -lntup | grep -q ':22 '"
+          inside "ss -lntup | grep -q ':299 '"
+          inside "ss -lunp | grep -q ':36712 '"
+          inside "ss -lunp | grep -q ':36713 '"
+          inside "ss -lunp | grep -q ':36717 '"
+          inside "ss -lunp | grep -q ':5667 '"
+          inside "ss -lunp | grep -q '127.0.0.1:5300'"
+          inside "ss -lunp | grep -q '127.0.0.1:5301'"
+          inside "ss -lunp | grep -q '127.0.0.1:5354'"
+          inside "ss -lntp | grep -q '127.0.0.1:10000'"
+          docker exec hextunnel-all test -x /usr/local/libexec/hextunnel/slipstream-server
+          docker exec hextunnel-all hextunnel doctor --report /tmp/all-modules-doctor-before.txt
+
+      - name: Restart systemd environment
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker restart --time 20 hextunnel-all
+          for _ in $(seq 1 90); do
+            state="$(docker exec hextunnel-all systemctl is-system-running 2>/dev/null || true)"
+            [[ "$state" == running || "$state" == degraded ]] && break
+            sleep 1
+          done
+          state="$(docker exec hextunnel-all systemctl is-system-running 2>/dev/null || true)"
+          [[ "$state" == running || "$state" == degraded ]]
+
+      - name: Validate persistence after restart
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          inside() { docker exec hextunnel-all bash -lc "$1"; }
+          services=(
+            ssh stunnel4 hextunnel-sslh fail2ban xray hextunnel-haproxy
+            hextunnel-hysteria hextunnel-hysteria-nat hysteria2
+            udp-custom hextunnel-badvpn server-sldns slipstream dnsdist
+            zivpn hextunnel-zivpn-nat webmin
+          )
+          for service in "${services[@]}"; do
+            docker exec hextunnel-all systemctl is-active --quiet "$service"
+          done
+          docker exec hextunnel-all hextunnel-nat status hysteria1
+          docker exec hextunnel-all hextunnel-nat status zivpn
+          inside "nft -a list chain inet hextunnel_nat prerouting | grep -Fq 'udp dport 36710-36720'"
+          inside "nft -a list chain inet hextunnel_nat prerouting | grep -Fq 'hextunnel-nat:hysteria1:exempt:36713'"
+          inside "nft -a list chain inet hextunnel_nat prerouting | grep -Fq 'hextunnel-nat:hysteria1:exempt:36717'"
+          inside "nft -a list chain inet hextunnel_nat prerouting | grep -Fq 'udp dport 6100-6110'"
+          inside "ss -lunp | grep -q ':36713 '"
+          inside "ss -lunp | grep -q ':36717 '"
+          inside "ss -lunp | grep -q '127.0.0.1:5300'"
+          inside "ss -lunp | grep -q '127.0.0.1:5301'"
+          inside "ss -lunp | grep -q '127.0.0.1:5354'"
+          docker exec hextunnel-all hextunnel doctor --report /tmp/all-modules-doctor-after.txt
+
+      - name: Uninstall all maintained modules
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker exec hextunnel-all bash -lc '
+            set -Eeuo pipefail
+            hextunnel uninstall --all 2>&1 | tee /tmp/all-modules-uninstall.log
+          '
+          paths=(
+            /etc/systemd/system/hextunnel-hysteria.service
+            /etc/systemd/system/hextunnel-hysteria-nat.service
+            /etc/systemd/system/hysteria2.service
+            /etc/systemd/system/udp-custom.service
+            /etc/systemd/system/server-sldns.service
+            /etc/systemd/system/slipstream.service
+            /etc/systemd/system/zivpn.service
+            /etc/systemd/system/hextunnel-zivpn-nat.service
+            /etc/systemd/system/xray.service
+            /etc/systemd/system/hextunnel-sslh.service
+            /etc/ssh/sshd_config.d/90-hextunnel.conf
+            /usr/local/libexec/hextunnel/slipstream-server
+            /etc/hysteria1 /etc/hysteria2 /etc/udp-custom /etc/slowdns /etc/slipstream /etc/zivpn /etc/webmin
+          )
+          for path in "${paths[@]}"; do
+            ! docker exec hextunnel-all test -e "$path"
+          done
+          ! docker exec hextunnel-all hextunnel-nat status hysteria1
+          ! docker exec hextunnel-all hextunnel-nat status zivpn
+          docker exec hextunnel-all bash -lc "ss -lntp | grep -q ':22 '"
+
+      - name: Collect full-cycle diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          for file in all-modules-install.log all-modules-uninstall.log all-modules-doctor-before.txt all-modules-doctor-after.txt; do
+            docker cp "hextunnel-all:/tmp/$file" "/tmp/$file" 2>/dev/null || true
+          done
+          docker exec hextunnel-all bash -lc '
+            set +e
+            {
+              echo "=== os ==="
+              cat /etc/os-release
+              echo
+              echo "=== failed units ==="
+              systemctl --failed --no-pager
+              echo
+              echo "=== enabled Hex Tunnel units ==="
+              systemctl list-unit-files --no-pager | grep -E "hextunnel|hysteria|xray|zivpn|slipstream|server-sldns|udp-custom" || true
+              echo
+              echo "=== listeners ==="
+              ss -lntup
+              echo
+              echo "=== nftables ==="
+              nft list ruleset
+            } > /tmp/all-modules-system.log 2>&1
+          '
+          docker cp hextunnel-all:/tmp/all-modules-system.log /tmp/all-modules-system.log 2>/dev/null || true
+          chmod 644 /tmp/all-modules-* 2>/dev/null || true
+          docker rm -f hextunnel-all >/dev/null 2>&1 || true
+
+      - name: Upload full-cycle diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: all-modules-restart-${{ github.run_id }}
+          path: |
+            /tmp/all-modules-install.log
+            /tmp/all-modules-uninstall.log
+            /tmp/all-modules-doctor-before.txt
+            /tmp/all-modules-doctor-after.txt
+            /tmp/all-modules-system.log
+          if-no-files-found: warn
+          retention-days: 7

@@ -1,0 +1,264 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+ROOT="${HEXTUNNEL_INSTALL_DIR:-/opt/hextunnel}"
+[[ -f "$ROOT/lib/common.sh" ]] || ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+for file in common logging backup rollback systemd firewall secrets validation modules; do
+  # shellcheck disable=SC1090
+  source "$ROOT/lib/$file.sh"
+done
+init_logging
+load_runtime_config
+load_hextunnel_secrets
+load_module_registry
+
+usage() {
+  cat <<'EOF'
+hextunnel version
+hextunnel preflight [modulo...]
+hextunnel doctor [--report archivo]
+hextunnel status
+hextunnel install <modulo...>
+hextunnel uninstall <modulo|--all>
+hextunnel account <comando...>
+hextunnel backup <comando...>
+hextunnel update <comando...>
+hextunnel rollback [id] [--force]
+hextunnel legacy-menu
+EOF
+}
+
+doctor_dns() {
+  local public_ip domain value
+  public_ip="$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)"
+  printf 'IP pública: %s\n' "${public_ip:-no disponible}"
+  domain="${HEXTUNNEL_DOMAIN:-}"
+  if [[ -n "$domain" ]]; then
+    value="$(getent ahostsv4 "$domain" 2>/dev/null | awk 'NR==1 {print $1}' || true)"
+    printf 'DNS A %s: %s' "$domain" "${value:-sin resolución}"
+    [[ -n "$public_ip" && "$value" == "$public_ip" ]] && printf ' [correcto]' || true
+    printf '\n'
+  fi
+  if [[ -n "${HEXTUNNEL_SLOWDNS_NS:-}" ]]; then
+    printf 'SlowDNS NS %s: ' "$HEXTUNNEL_SLOWDNS_NS"
+    if command_exists dig; then
+      { dig +short NS "$HEXTUNNEL_SLOWDNS_NS" 2>/dev/null || true; } | paste -sd ',' -
+    else
+      printf 'dig no instalado'
+    fi
+    printf '\n'
+  fi
+  if [[ -n "${HEXTUNNEL_SLIPSTREAM_DOMAIN:-}" ]]; then
+    printf 'SlipStream NS %s: ' "$HEXTUNNEL_SLIPSTREAM_DOMAIN"
+    if command_exists dig; then
+      { dig +short NS "$HEXTUNNEL_SLIPSTREAM_DOMAIN" 2>/dev/null || true; } | paste -sd ',' -
+    else
+      printf 'dig no instalado'
+    fi
+    printf '\n'
+  fi
+}
+
+doctor_certificates() {
+  local certificate directory
+  local directories=()
+  for directory in /etc/xray /etc/hysteria2 /etc/zivpn /etc/slipstream; do
+    [[ -d "$directory" ]] && directories+=("$directory")
+  done
+  if ((${#directories[@]} == 0)); then
+    printf 'No se encontraron directorios de certificados administrados.\n'
+    return 0
+  fi
+  while IFS= read -r certificate; do
+    [[ -n "$certificate" ]] || continue
+    printf '%s: ' "$certificate"
+    if openssl x509 -in "$certificate" -noout -subject -issuer -enddate 2>/dev/null \
+      | paste -sd ' ' -; then
+      :
+    else
+      printf 'certificado inválido'
+    fi
+    if openssl x509 -in "$certificate" -checkend 604800 -noout >/dev/null 2>&1; then
+      printf ' [vigente >7d]'
+    else
+      printf ' [expira o inválido <7d]'
+    fi
+    printf '\n'
+  done < <(
+    find "${directories[@]}" -maxdepth 2 -type f \
+      \( -name '*.crt' -o -name '*.pem' \) -print 2>/dev/null | sort -u
+  )
+}
+
+doctor_transactions() {
+  local transaction count=0
+  if [[ ! -d "$HEXTUNNEL_STATE/transactions" ]]; then
+    printf 'No se encontraron transacciones.\n'
+    return 0
+  fi
+  while IFS= read -r transaction; do
+    [[ -n "$transaction" ]] || continue
+    printf '%s status=%s\n' \
+      "$(basename "$transaction")" \
+      "$(cat "$transaction/status" 2>/dev/null || printf UNKNOWN)"
+    count=$((count + 1))
+    ((count >= 10)) && break
+  done < <(
+    find "$HEXTUNNEL_STATE/transactions" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | sort -r
+  )
+  ((count > 0)) || printf 'No se encontraron transacciones.\n'
+}
+
+doctor() {
+  local report="${1:-}" output raw sanitized module status=0 checked=0 cleanup_command
+  raw="$(mktemp /tmp/hextunnel-doctor-raw.XXXXXX)"
+  sanitized="$(mktemp /tmp/hextunnel-doctor.XXXXXX)"
+  printf -v cleanup_command 'rm -f -- %q %q' "$raw" "$sanitized"
+  trap "$cleanup_command" EXIT
+
+  {
+    echo "Hex Tunnel Doctor"
+    echo "Versión: $HEXTUNNEL_VERSION"
+    echo "Canal: $HEXTUNNEL_RELEASE_CHANNEL"
+    echo "Fecha: $(date -Is)"
+    echo "Host: $(hostname)"
+    echo "OS: $(. /etc/os-release; echo "$PRETTY_NAME")"
+    echo "Arquitectura: $(uname -m)"
+    echo "Kernel: $(uname -r)"
+    echo "Uptime: $(uptime -p 2>/dev/null || true)"
+    echo
+    echo "Recursos:"
+    free -h || true
+    df -h / || true
+    echo
+    echo "DNS:"
+    doctor_dns
+    echo
+    echo "Firewall: $(firewall_backend)"
+    case "$(firewall_backend)" in
+      ufw) ufw status verbose 2>/dev/null || true ;;
+      nft) nft list table inet hextunnel 2>/dev/null || nft list ruleset 2>/dev/null || true ;;
+      iptables) iptables -S INPUT 2>/dev/null || true ;;
+    esac
+    echo
+    echo "Puertos escuchando:"
+    ss -lntup || true
+    echo
+    echo "Certificados:"
+    doctor_certificates
+    echo
+    echo "Módulos administrados:"
+    for module in "${HEXTUNNEL_AVAILABLE_MODULES[@]}"; do
+      module_is_installed "$module" || continue
+      checked=$((checked + 1))
+      printf '[%s] ' "$module"
+      if ! module_doctor "$module"; then
+        status=1
+      fi
+    done
+    ((checked > 0)) || echo "Ningún módulo registrado."
+    echo
+    echo "Transacciones recientes:"
+    doctor_transactions
+    echo
+    echo "Errores recientes de systemd:"
+    journalctl -p err -n 80 --no-pager 2>/dev/null || true
+  } > "$raw"
+
+  sanitize_text < "$raw" > "$sanitized"
+  output="${report:-$HEXTUNNEL_LOG_DIR/doctor-$(date +%Y%m%d-%H%M%S).txt}"
+  install -m 600 "$sanitized" "$output"
+  rm -f -- "$raw" "$sanitized"
+  trap - EXIT
+  printf 'Reporte generado: %s\n' "$output"
+  return "$status"
+}
+
+rollback_command() {
+  local id="" argument
+  HEXTUNNEL_FORCE=0
+  while (($# > 0)); do
+    argument="$1"
+    case "$argument" in
+      --force) HEXTUNNEL_FORCE=1 ;;
+      --help|-h)
+        printf 'Uso: hextunnel rollback [id] [--force]\n'
+        return 0
+        ;;
+      --*) die "Opción de rollback desconocida: $argument" ;;
+      *)
+        [[ -z "$id" ]] || die "Solo puede indicarse una transacción para rollback."
+        id="$argument"
+        ;;
+    esac
+    shift
+  done
+  export HEXTUNNEL_FORCE
+  rollback_transaction "$id"
+}
+
+case "${1:-help}" in
+  version|--version|-V)
+    printf 'Hex Tunnel %s (%s)\n' "$HEXTUNNEL_VERSION" "$HEXTUNNEL_RELEASE_CHANNEL"
+    ;;
+  preflight)
+    shift
+    modules=("$@")
+    if ((${#modules[@]} == 0)); then
+      modules=(ssh xray hysteria hysteria2 udp-custom slowdns slipstream zivpn webmin)
+    fi
+    resolve_module_dependencies modules
+    preflight_all "${modules[@]}"
+    ;;
+  doctor)
+    shift
+    if [[ "${1:-}" == --report ]]; then
+      shift
+      doctor "${1:-}"
+    else
+      doctor
+    fi
+    ;;
+  status)
+    for module in "${HEXTUNNEL_AVAILABLE_MODULES[@]}"; do
+      if module_is_installed "$module"; then
+        printf '%-14s ' "$module"
+        module_doctor "$module" || true
+      elif [[ "$module" != legacy-all ]]; then
+        printf '%-14s not-installed\n' "$module"
+      fi
+    done
+    ;;
+  install)
+    shift
+    exec "$ROOT/install.sh" install "$@"
+    ;;
+  uninstall)
+    shift
+    exec "$ROOT/install.sh" uninstall "$@"
+    ;;
+  account)
+    shift
+    exec "$ROOT/bin/hextunnel-account" "$@"
+    ;;
+  backup)
+    shift
+    exec "$ROOT/bin/hextunnel-backup" "$@"
+    ;;
+  update)
+    shift
+    exec "$ROOT/bin/hextunnel-update" "$@"
+    ;;
+  rollback)
+    shift
+    rollback_command "$@"
+    ;;
+  legacy-menu)
+    [[ -x /usr/local/bin/menu ]] && exec /usr/local/bin/menu || die "El menú heredado no está instalado."
+    ;;
+  help|--help|-h)
+    usage
+    ;;
+  *)
+    die "Comando desconocido: ${1:-}"
+    ;;
+esac

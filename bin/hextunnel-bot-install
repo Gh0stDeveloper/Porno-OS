@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+
+usage() {
+  cat <<'EOF'
+Uso:
+  hextunnel-bot-install [modulo ...] [opciones]
+  hextunnel-bot-install --verify-only
+
+Este entrypoint valida una key de un solo uso generada por TeleBotGen y,
+después de activarla, abre el instalador modular de Hex Tunnel.
+EOF
+}
+
+[[ "${EUID:-$(id -u)}" -eq 0 ]] || {
+  echo 'ERROR: ejecuta este instalador como root.' >&2
+  exit 1
+}
+[[ -r "$ROOT/lib/license-compat.sh" && -r "$ROOT/install.sh" ]] || {
+  echo 'ERROR: el paquete de Hex Tunnel está incompleto.' >&2
+  exit 1
+}
+
+case "${1:-}" in
+  --help|-h) usage; exit 0 ;;
+esac
+
+# shellcheck source=../lib/license-compat.sh
+source "$ROOT/lib/license-compat.sh"
+
+export HEXTUNNEL_REQUIRE_BOT_KEY=1
+export HEXTUNNEL_ALLOW_LEGACY_HTTP_LICENSE=1
+hextunnel_validate_telebotgen_key
+
+if [[ "${1:-}" == --verify-only ]]; then
+  echo 'Activación TeleBotGen verificada correctamente.'
+  exit 0
+fi
+
+exec bash "$ROOT/install.sh" install "$@"

@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+finalize_error() {
+  printf 'ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
+[[ "${EUID:-$(id -u)}" -eq 0 ]] || finalize_error "La finalización debe ejecutarse como root."
+ROOT="${HEXTUNNEL_PACKAGE_ROOT:-${HEXTUNNEL_PRIVATE_PACKAGE_ROOT:-${HEXTUNNEL_BETA_PACKAGE_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)}}}"
+[[ -f "$ROOT/lib/common.sh" ]] || finalize_error "El paquete no contiene el framework Hex Tunnel."
+[[ -x /usr/local/bin/menu ]] || finalize_error "El instalador completo no creó /usr/local/bin/menu."
+
+for file in common logging backup rollback systemd firewall nat secrets validation modules framework; do
+  # shellcheck disable=SC1090
+  source "$ROOT/lib/$file.sh"
+done
+
+init_logging
+load_runtime_config
+load_hextunnel_secrets
+load_module_registry
+HEXTUNNEL_DRY_RUN=0
+HEXTUNNEL_NON_INTERACTIVE=1
+HEXTUNNEL_NO_REBOOT=1
+HEXTUNNEL_FORCE=0
+export HEXTUNNEL_DRY_RUN HEXTUNNEL_NON_INTERACTIVE HEXTUNNEL_NO_REBOOT HEXTUNNEL_FORCE
+
+sshd -t || finalize_error "La configuración final de OpenSSH es inválida."
+module_validate legacy-all
+firewall_prepare_backend
+transaction_begin complete-installer-finalize
+trap 'transaction_fail "$?" "$LINENO" "$BASH_COMMAND"' ERR INT TERM
+firewall_snapshot
+install_framework
+
+if ! module_is_installed webmin; then
+  module_install webmin
+fi
+
+slipstream_domain="$(tr -d '\r\n' < /etc/deekayvpn/slipstream_domain.txt 2>/dev/null || true)"
+slowdns_ns="$(tr -d '\r\n' < /etc/deekayvpn/slowdns_ns.txt 2>/dev/null || true)"
+if [[ -n "$slipstream_domain" ]]; then
+  [[ -n "$slowdns_ns" ]] || finalize_error "No se encontró el Nameserver de SlowDNS para instalar SlipStream."
+  HEXTUNNEL_SLIPSTREAM_DOMAIN="$slipstream_domain"
+  HEXTUNNEL_SLOWDNS_NS="$slowdns_ns"
+  export HEXTUNNEL_SLIPSTREAM_DOMAIN HEXTUNNEL_SLOWDNS_NS
+  if ! module_is_installed slowdns; then
+    module_install slowdns
+  fi
+  if ! module_is_installed slipstream; then
+    module_install slipstream
+  fi
+fi
+
+module_mark_installed legacy-all
+write_file "$HEXTUNNEL_ETC/install-mode.env" 600 <<EOF
+HEXTUNNEL_INSTALL_MODE=complete-sanitized-panel
+HEXTUNNEL_VERSION=$(printf '%q' "$HEXTUNNEL_VERSION")
+HEXTUNNEL_RELEASE_CHANNEL=$(printf '%q' "$HEXTUNNEL_RELEASE_CHANNEL")
+HEXTUNNEL_FINALIZED_AT=$(printf '%q' "$(date -u +%Y-%m-%dT%H:%M:%SZ)")
+HEXTUNNEL_SOURCE_SHA=$(printf '%q' "${HEXTUNNEL_BETA_SOURCE_SHA:-${GITHUB_SHA:-unknown}}")
+EOF
+transaction_commit
+trap - ERR INT TERM
+
+/usr/local/bin/hextunnel version
+printf 'Framework operativo instalado en %s.\n' "$HEXTUNNEL_INSTALL_DIR"
+printf 'Diagnóstico: sudo hextunnel doctor\n'
+printf 'Respaldo: sudo hextunnel backup create\n'

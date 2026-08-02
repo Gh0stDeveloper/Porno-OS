@@ -1,0 +1,30 @@
+name: ShellCheck
+on:
+  push:
+    branches: ['feat/**', 'fix/**', 'main']
+  pull_request:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Check maintained Bash source
+        shell: bash
+        run: |
+          find . -type f -name '*.sh' \
+            -not -path './legacy/*' \
+            -not -path './.git/*' \
+            -print0 | xargs -0 shellcheck --severity=error
+      - name: Check private license entrypoints
+        run: |
+          shellcheck --severity=error \
+            bin/hextunnel-license \
+            bin/hextunnel-install-license-runtime \
+            bin/hextunnel-private-install \
+            bin/hextunnel-private-upgrade

@@ -1,0 +1,276 @@
+name: Manual Bash finalization
+on:
+  push:
+    branches: [feat/transactional-architecture]
+    paths:
+      - '.manual-finalize-v2-trigger'
+permissions:
+  contents: write
+concurrency:
+  group: manual-finalize-v2
+  cancel-in-progress: false
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/transactional-architecture
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Apply reviewed Bash corrections
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          sed -i 's/run_cmd apt-get install -y curl ca-certificates$/run_cmd apt-get install -y curl ca-certificates util-linux/' modules/slowdns.sh
+          sed -i 's/sudo -u hextunnel-slowdns/runuser -u hextunnel-slowdns --/' modules/slowdns.sh
+
+          awk '
+            /^account_hysteria2_add\(\)/ {
+              print "account_hysteria2_add() {"
+              print "  local username=\"$1\" token=\"$2\" expires=\"$3\""
+              print "  [[ -s /etc/hysteria2/users.txt ]] || die \"Hysteria 2 no está instalado.\""
+              print "  backup_path /etc/hysteria2/users.txt"
+              print "  [[ \"${HEXTUNNEL_DRY_RUN:-0}\" == 1 ]] || {"
+              print "    sed -i -E \"/^${username//./\\\\.} /d\" /etc/hysteria2/users.txt"
+              print "    printf \"%s %s %s\\n\" \"$username\" \"$token\" \"$expires\" >> /etc/hysteria2/users.txt"
+              print "    chown root:hextunnel-hysteria2 /etc/hysteria2/users.txt"
+              print "    chmod 640 /etc/hysteria2/users.txt"
+              print "  }"
+              print "}"
+              replacing=1
+              next
+            }
+            replacing && /^account_hysteria2_remove_runtime\(\)/ {
+              print ""
+              print "account_hysteria2_remove_runtime() {"
+              print "  local username=\"$1\" tmp"
+              print "  [[ -f /etc/hysteria2/users.txt ]] || return 0"
+              print "  backup_path /etc/hysteria2/users.txt"
+              print "  [[ \"${HEXTUNNEL_DRY_RUN:-0}\" == 1 ]] && return 0"
+              print "  tmp=\"$(mktemp /tmp/hextunnel-hysteria2-account.XXXXXX)\""
+              print "  awk -v user=\"$username\" '\''$1 != user'\'' /etc/hysteria2/users.txt > \"$tmp\""
+              print "  install -m 640 -o root -g hextunnel-hysteria2 \"$tmp\" /etc/hysteria2/users.txt"
+              print "  rm -f \"$tmp\""
+              print "}"
+              replacing=2
+              next
+            }
+            replacing==2 && /^account_zivpn_rebuild_config\(\)/ { replacing=0; print ""; print }
+            replacing { next }
+            { print }
+          ' lib/accounts.sh > lib/accounts.sh.new
+          mv lib/accounts.sh.new lib/accounts.sh
+          chmod 644 lib/accounts.sh
+
+          awk '
+            /^webmin_doctor\(\)/ {
+              print "webmin_doctor() {"
+              print "  local failed=0 bind scope=any"
+              print "  bind=\"$(awk -F= '\''$1==\"bind\"{print $2}'\'' /etc/webmin/miniserv.conf 2>/dev/null | tail -n1)\""
+              print "  [[ \"${HEXTUNNEL_WEBMIN_PUBLIC:-0}\" == 1 ]] && scope=public"
+              print "  printf '\''service=%s tls='\'' \"$(systemctl is-active webmin 2>/dev/null || true)\""
+              print "  systemctl is-active --quiet webmin || failed=1"
+              print "  if grep -q '\''^ssl=1$'\'' /etc/webmin/miniserv.conf 2>/dev/null; then printf enabled; else printf disabled; failed=1; fi"
+              print "  printf '\'' bind=%s port='\'' \"${bind:-all}\""
+              print "  if port_is_listening tcp 10000 \"$scope\"; then printf open; else printf closed; failed=1; fi"
+              print "  if [[ \"${HEXTUNNEL_WEBMIN_PUBLIC:-0}\" != 1 && \"$bind\" != 127.0.0.1 ]]; then failed=1; fi"
+              print "  printf '\''\\n'\''"
+              print "  return \"$failed\""
+              print "}"
+              replacing=1
+              next
+            }
+            replacing { next }
+            { print }
+          ' modules/webmin.sh > modules/webmin.sh.new
+          mv modules/webmin.sh.new modules/webmin.sh
+
+          sed -i 's/framework|xray|hysteria2|zivpn/framework|xray|hysteria|hysteria2|zivpn|udp-custom/' bin/hextunnel-update
+
+          awk '
+            /^    hysteria2\)/ {
+              print "    hysteria2)"
+              print "      chmod 755 \"$artifact\""
+              print "      backup_path /usr/local/bin/hysteria2"
+              print "      install -m 755 \"$artifact\" /usr/local/bin/hysteria2"
+              print "      hysteria2_validate_config || die \"El artefacto Hysteria 2 no supera el arranque de validación.\""
+              print "      safe_restart_service hysteria2"
+              print "      hysteria2_validate"
+              print "      ;;"
+              replacing=1
+              next
+            }
+            replacing && /^    zivpn\)/ { replacing=0; print }
+            replacing { next }
+            { print }
+          ' lib/update.sh > lib/update.sh.new
+          mv lib/update.sh.new lib/update.sh
+
+          cat > tests/unit/test-core.sh <<'EOF'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+          export HEXTUNNEL_ROOT="$ROOT"
+          export HEXTUNNEL_DRY_RUN=1
+          export HEXTUNNEL_STATE="$(mktemp -d /tmp/hextunnel-test-state.XXXXXX)"
+          trap 'rm -rf "$HEXTUNNEL_STATE"' EXIT
+          stage() { printf 'TEST: %s\n' "$1"; }
+          index_of() {
+            local needle="$1" index
+            shift
+            local values=("$@")
+            for index in "${!values[@]}"; do
+              [[ "${values[$index]}" == "$needle" ]] && { printf '%s' "$index"; return 0; }
+            done
+            return 1
+          }
+          stage source-libraries
+          for file in common logging backup rollback systemd firewall secrets validation modules; do
+            source "$ROOT/lib/$file.sh"
+          done
+          stage utility-functions
+          [[ "$(join_by , a b c)" == a,b,c ]]
+          [[ "$(normalize_architecture)" =~ ^(amd64|arm64|arm|386)$ ]]
+          secret="$(random_secret 32)"
+          [[ ${#secret} -eq 32 && "$secret" =~ ^[a-f0-9]+$ ]]
+          stage module-registry
+          load_module_registry
+          for module in ssh xray hysteria hysteria2 udp-custom slowdns slipstream zivpn webmin legacy-all; do
+            module_exists "$module"
+          done
+          stage recursive-dependencies
+          requested=(hysteria2 slipstream udp-custom)
+          resolve_module_dependencies requested
+          printf 'resolved: %s\n' "${requested[*]}"
+          for module in ssh xray hysteria2 slowdns slipstream udp-custom; do index_of "$module" "${requested[@]}" >/dev/null; done
+          ssh_index="$(index_of ssh "${requested[@]}")"
+          xray_index="$(index_of xray "${requested[@]}")"
+          hysteria_index="$(index_of hysteria2 "${requested[@]}")"
+          slowdns_index="$(index_of slowdns "${requested[@]}")"
+          slipstream_index="$(index_of slipstream "${requested[@]}")"
+          udp_index="$(index_of udp-custom "${requested[@]}")"
+          ((ssh_index < xray_index && xray_index < hysteria_index))
+          ((ssh_index < slowdns_index && slowdns_index < slipstream_index))
+          ((ssh_index < udp_index))
+          printf 'core tests: ok\n'
+          EOF
+          sed -i 's/^          //' tests/unit/test-core.sh
+          chmod 755 tests/unit/test-core.sh
+
+          cat > tests/unit/test-xray-template.sh <<'EOF'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+          config="$ROOT/templates/xray/config.json"
+          jq empty "$config"
+          for tag in vless-tls-dispatcher vless-tcp-http vless-plain-public vless-ws vless-xhttp vless-httpupgrade vless-grpc vmess-tcp-http vmess-ws vmess-xhttp vmess-httpupgrade vmess-grpc trojan-ws; do
+            jq -e --arg tag "$tag" '.inbounds[] | select(.tag == $tag)' "$config" >/dev/null
+          done
+          jq -e '[.inbounds[] | select(.tag == "vless-tls-dispatcher") | .settings.fallbacks[] | .path] | index("/xhttp")' "$config" >/dev/null
+          jq -e '[.inbounds[] | select(.tag == "vless-tls-dispatcher") | .settings.fallbacks[] | .path] | index("/vmess-xhttp")' "$config" >/dev/null
+          printf 'xray template: ok\n'
+          EOF
+          sed -i 's/^          //' tests/unit/test-xray-template.sh
+          chmod 755 tests/unit/test-xray-template.sh
+
+          cat > .github/workflows/tests.yml <<'EOF'
+          name: Bash tests
+          on:
+            push:
+              branches: ['feat/**', 'fix/**', 'main']
+            pull_request:
+          permissions:
+            contents: read
+          jobs:
+            tests:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+                - name: Install test dependencies
+                  run: sudo apt-get update && sudo apt-get install -y jq
+                - name: Validate Bash syntax
+                  run: bash tests/integration/test-syntax.sh
+                - name: Test core
+                  run: bash tests/unit/test-core.sh
+                - name: Test module contracts
+                  run: bash tests/unit/test-module-contract.sh
+                - name: Test Xray template
+                  run: bash tests/unit/test-xray-template.sh
+                - name: Test current tree security invariants
+                  run: bash tests/security/test-current-tree.sh
+          EOF
+          sed -i 's/^          //' .github/workflows/tests.yml
+
+          cat > config/update-manifest.example.json <<'EOF'
+          {
+            "channel": "stable",
+            "released_at": "2026-07-25T00:00:00Z",
+            "components": {
+              "framework": {"version":"2.0.0","changelog":"Arquitectura transaccional.","artifacts":{"all":{"url":"https://updates.example.com/framework.tar.gz","sha256":"REEMPLAZAR_SHA256"}}},
+              "xray": {"version":"v26.3.27","changelog":"Xray verificado.","artifacts":{"amd64":{"url":"https://updates.example.com/xray-amd64.zip","sha256":"REEMPLAZAR_SHA256"}}},
+              "hysteria": {"version":"1.12.22","changelog":"Sing-box verificado.","artifacts":{"amd64":{"url":"https://updates.example.com/sing-box-amd64.deb","sha256":"REEMPLAZAR_SHA256"}}},
+              "hysteria2": {"version":"2.9.3","changelog":"Hysteria 2 verificado.","artifacts":{"amd64":{"url":"https://updates.example.com/hysteria2-amd64","sha256":"REEMPLAZAR_SHA256"}}},
+              "zivpn": {"version":"1.4.9","changelog":"ZiVPN verificado.","artifacts":{"amd64":{"url":"https://updates.example.com/zivpn-amd64","sha256":"REEMPLAZAR_SHA256"}}},
+              "udp-custom": {"version":"1.0.0","changelog":"UDP Custom verificado.","artifacts":{"amd64":{"url":"https://updates.example.com/udp-custom-amd64","sha256":"REEMPLAZAR_SHA256"}}}
+            }
+          }
+          EOF
+          sed -i 's/^          //' config/update-manifest.example.json
+
+          cat > docs/UPDATES.md <<'EOF'
+          # Actualizaciones firmadas
+
+          Hex Tunnel exige firma OpenSSL para el manifiesto y SHA-256 para cada artefacto.
+
+          ```bash
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out update-private.pem
+          openssl pkey -in update-private.pem -pubout -out update-public.pem
+          openssl dgst -sha256 -sign update-private.pem -out manifest.json.sig manifest.json
+          ```
+
+          La clave privada permanece fuera del repositorio y de los VPS. Instala solo la pública:
+
+          ```bash
+          install -d -m 700 /etc/hextunnel
+          install -m 644 update-public.pem /etc/hextunnel/update-public.pem
+          ```
+
+          Configura las URLs HTTPS en `/etc/hextunnel/hextunnel.env` y usa:
+
+          ```bash
+          hextunnel-update check --channel stable
+          hextunnel-update apply framework --channel stable
+          hextunnel-update apply xray --channel testing
+          ```
+
+          El binario instalado es exactamente el artefacto validado; no se realiza otra descarga fuera del manifiesto.
+          EOF
+          sed -i 's/^          //' docs/UPDATES.md
+
+          rm -f .manual-finalize-v2-trigger .github/workflows/manual-finalize-v2.yml
+
+      - name: Validate final tree
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update
+          sudo apt-get install -y jq shellcheck
+          bash tests/integration/test-syntax.sh
+          bash tests/unit/test-core.sh
+          bash tests/unit/test-module-contract.sh
+          bash tests/unit/test-xray-template.sh
+          bash tests/security/test-current-tree.sh
+          find . -type f -name '*.sh' -not -path './legacy/*' -not -path './.git/*' -print0 \
+            | xargs -0 shellcheck --severity=error
+      - name: Commit final manual corrections
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: finalize manual Bash architecture validation'
+          git push origin HEAD:feat/transactional-architecture

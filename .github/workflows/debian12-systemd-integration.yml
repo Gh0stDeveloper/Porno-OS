@@ -1,0 +1,195 @@
+name: Debian 12 systemd integration
+on:
+  push:
+    branches: [feat/transactional-architecture]
+    paths:
+      - install.sh
+      - bin/**
+      - lib/**
+      - modules/ssh.sh
+      - modules/xray.sh
+      - modules/hysteria2.sh
+      - .github/workflows/debian12-systemd-integration.yml
+  pull_request:
+    paths:
+      - install.sh
+      - bin/**
+      - lib/**
+      - modules/ssh.sh
+      - modules/xray.sh
+      - modules/hysteria2.sh
+      - .github/workflows/debian12-systemd-integration.yml
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  debian12-systemd:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Debian 12 systemd image
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cat > /tmp/Dockerfile.debian12 <<'EOF'
+          FROM debian:12
+          ENV container=docker
+          ENV DEBIAN_FRONTEND=noninteractive
+          RUN apt-get update \
+              && apt-get install -y --no-install-recommends \
+                 systemd systemd-sysv dbus ca-certificates curl jq iproute2 procps \
+              && apt-get clean \
+              && rm -rf /var/lib/apt/lists/*
+          STOPSIGNAL SIGRTMIN+3
+          CMD ["/sbin/init"]
+          EOF
+          docker build -t hextunnel-debian12 -f /tmp/Dockerfile.debian12 .
+
+      - name: Start isolated systemd environment
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker run -d \
+            --name hextunnel-debian12 \
+            --hostname hextunnel-debian12 \
+            --privileged \
+            --cgroupns=host \
+            --tmpfs /run \
+            --tmpfs /run/lock \
+            -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
+            -v "$PWD:/workspace:ro" \
+            hextunnel-debian12
+          for _ in $(seq 1 60); do
+            state="$(docker exec hextunnel-debian12 systemctl is-system-running 2>/dev/null || true)"
+            [[ "$state" == running || "$state" == degraded ]] && break
+            sleep 1
+          done
+          docker exec hextunnel-debian12 systemctl is-system-running --wait || \
+            [[ "$(docker exec hextunnel-debian12 systemctl is-system-running 2>/dev/null || true)" == degraded ]]
+
+      - name: Prepare private configuration
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cat > /tmp/debian-hextunnel.env <<'EOF'
+          HEXTUNNEL_ALLOW_ROOT_PASSWORD=0
+          HEXTUNNEL_WEBMIN_PUBLIC=0
+          HEXTUNNEL_ADMIN_IP=127.0.0.1/32
+          EOF
+          cat > /tmp/debian-secrets.env <<'EOF'
+          HEXTUNNEL_TELEGRAM_CHAT_ID=""
+          HEXTUNNEL_TELEGRAM_BOT_TOKEN=""
+          EOF
+          docker exec hextunnel-debian12 install -d -m 700 /etc/hextunnel
+          docker cp /tmp/debian-hextunnel.env hextunnel-debian12:/etc/hextunnel/hextunnel.env
+          docker cp /tmp/debian-secrets.env hextunnel-debian12:/etc/hextunnel/secrets.env
+          docker exec hextunnel-debian12 chown root:root /etc/hextunnel/hextunnel.env /etc/hextunnel/secrets.env
+          docker exec hextunnel-debian12 chmod 600 /etc/hextunnel/hextunnel.env /etc/hextunnel/secrets.env
+
+      - name: Install maintained core modules
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker exec hextunnel-debian12 bash -lc '
+            set -Eeuo pipefail
+            cd /workspace
+            bash ./install.sh install ssh xray hysteria2 \
+              --non-interactive --no-reboot --force \
+              2>&1 | tee /tmp/debian12-install.log
+          '
+
+      - name: Validate services and configurations
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker exec hextunnel-debian12 systemctl is-active --quiet ssh
+          docker exec hextunnel-debian12 systemctl is-active --quiet stunnel4
+          docker exec hextunnel-debian12 systemctl is-active --quiet hextunnel-sslh
+          docker exec hextunnel-debian12 systemctl is-active --quiet xray
+          docker exec hextunnel-debian12 systemctl is-active --quiet hextunnel-haproxy
+          docker exec hextunnel-debian12 systemctl is-active --quiet hysteria2
+          docker exec hextunnel-debian12 sshd -t
+          docker exec hextunnel-debian12 /usr/local/bin/xray run -test -config /etc/xray/config.json
+          docker exec hextunnel-debian12 haproxy -c -f /etc/hextunnel/haproxy-xray.cfg
+          docker exec hextunnel-debian12 runuser -u sslh -- test -r /etc/sslh/hextunnel.cfg
+          docker exec hextunnel-debian12 runuser -u hextunnel-hysteria2 -- test -r /etc/hysteria2/server.key
+          docker exec hextunnel-debian12 ss -lntp | grep -q ':22 '
+          docker exec hextunnel-debian12 ss -lntp | grep -q ':299 '
+
+      - name: Exercise account lifecycle and diagnostics
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          expires="$(date -d '+7 days' +%Y-%m-%d)"
+          docker exec hextunnel-debian12 hextunnel-account create hysteria2 ciuser "$expires" > /tmp/debian12-account-create.txt
+          docker exec hextunnel-debian12 hextunnel-account suspend hysteria2 ciuser
+          docker exec hextunnel-debian12 hextunnel-account resume hysteria2 ciuser
+          docker exec hextunnel-debian12 hextunnel-account renew hysteria2 ciuser "$(date -d '+14 days' +%Y-%m-%d)"
+          docker exec hextunnel-debian12 hextunnel-account delete hysteria2 ciuser
+          ! docker exec hextunnel-debian12 hextunnel-account list | grep -q $'hysteria2\tciuser'
+          docker exec hextunnel-debian12 hextunnel doctor --report /tmp/debian12-doctor.txt
+          docker cp hextunnel-debian12:/tmp/debian12-doctor.txt /tmp/debian12-doctor.txt
+          test -s /tmp/debian12-doctor.txt
+          ! grep -Eq -- '-----BEGIN .*PRIVATE KEY-----|[0-9]{8,12}:[A-Za-z0-9_-]{20,}' /tmp/debian12-doctor.txt
+
+      - name: Uninstall and restore OpenSSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker exec hextunnel-debian12 bash -lc '
+            set -Eeuo pipefail
+            hextunnel uninstall hysteria2 xray ssh \
+              2>&1 | tee /tmp/debian12-uninstall.log
+          '
+          ! docker exec hextunnel-debian12 test -e /etc/systemd/system/hysteria2.service
+          ! docker exec hextunnel-debian12 test -e /etc/systemd/system/xray.service
+          ! docker exec hextunnel-debian12 test -e /etc/systemd/system/hextunnel-sslh.service
+          ! docker exec hextunnel-debian12 test -e /etc/ssh/sshd_config.d/90-hextunnel.conf
+          docker exec hextunnel-debian12 ss -lntp | grep -q ':22 '
+
+      - name: Collect Debian diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          docker exec hextunnel-debian12 bash -lc '
+            set +e
+            {
+              echo "=== os ==="
+              cat /etc/os-release
+              echo
+              echo "=== systemd ==="
+              systemctl is-system-running
+              systemctl --failed --no-pager
+              for unit in ssh stunnel4 sslh hextunnel-sslh fail2ban xray hextunnel-haproxy hysteria2; do
+                echo
+                echo "=== $unit ==="
+                systemctl status "$unit" --no-pager -l
+                journalctl -u "$unit" -n 160 --no-pager
+              done
+            } > /tmp/debian12-system.log 2>&1
+          '
+          docker cp hextunnel-debian12:/tmp/debian12-system.log /tmp/debian12-system.log 2>/dev/null || true
+          docker cp hextunnel-debian12:/tmp/debian12-install.log /tmp/debian12-install.log 2>/dev/null || true
+          docker cp hextunnel-debian12:/tmp/debian12-uninstall.log /tmp/debian12-uninstall.log 2>/dev/null || true
+          chmod 644 /tmp/debian12-*.txt /tmp/debian12-*.log 2>/dev/null || true
+          docker rm -f hextunnel-debian12 >/dev/null 2>&1 || true
+
+      - name: Upload Debian diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debian12-systemd-${{ github.run_id }}
+          path: |
+            /tmp/debian12-system.log
+            /tmp/debian12-install.log
+            /tmp/debian12-uninstall.log
+            /tmp/debian12-doctor.txt
+            /tmp/debian12-account-create.txt
+          if-no-files-found: warn
+          retention-days: 7

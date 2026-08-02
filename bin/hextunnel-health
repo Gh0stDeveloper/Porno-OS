@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+ROOT="${HEXTUNNEL_INSTALL_DIR:-/opt/hextunnel}"
+for file in common logging backup rollback systemd firewall secrets validation modules; do
+  # shellcheck disable=SC1090
+  source "$ROOT/lib/$file.sh"
+done
+init_logging
+load_runtime_config
+load_hextunnel_secrets
+load_module_registry
+
+failures=()
+checked=0
+for module in "${HEXTUNNEL_AVAILABLE_MODULES[@]}"; do
+  [[ "$module" == legacy-all ]] && continue
+  module_is_installed "$module" || continue
+  checked=$((checked + 1))
+  if ! output="$(module_doctor "$module" 2>&1)"; then
+    failures+=("$module")
+    log_warn "$module: $output"
+  else
+    log_info "$module: $output"
+  fi
+done
+
+if ((${#failures[@]} > 0)); then
+  message="Hex Tunnel detectó fallos en: $(join_by ', ' "${failures[@]}")"
+  telegram_notify "$message"
+  log_error "$message"
+  exit 1
+fi
+if ((checked == 0)); then
+  log_info "No hay módulos administrados registrados."
+else
+  log_success "Los $checked módulos instalados respondieron correctamente."
+fi

@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+beta_install_error() {
+  printf 'ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
+[[ "${EUID:-$(id -u)}" -eq 0 ]] || beta_install_error "La instalación beta debe ejecutarse como root."
+[[ "${HEXTUNNEL_BETA_MODE:-0}" == 1 ]] \
+  || beta_install_error "Este entrypoint solo puede ejecutarse mediante beta-install.sh."
+[[ "${HEXTUNNEL_BETA_SOURCE_SHA:-}" =~ ^[0-9a-f]{40}$ ]] \
+  || beta_install_error "No se recibió un commit beta válido."
+
+ROOT="${HEXTUNNEL_BETA_PACKAGE_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)}"
+LEGACY_INSTALLER="$ROOT/legacy/install-all.sh"
+PREFLIGHT="$ROOT/bin/hextunnel-legacy-preflight"
+FINALIZER="$ROOT/bin/hextunnel-finalize-install"
+PREPARER="$ROOT/scripts/prepare-legacy-runtime.sh"
+VERSION_FILE="$ROOT/VERSION"
+[[ -f "$LEGACY_INSTALLER" ]] || beta_install_error "No se encontró el instalador original completo."
+[[ -f "$PREFLIGHT" && -f "$FINALIZER" && -f "$PREPARER" ]] \
+  || beta_install_error "El paquete beta no contiene las fases protegidas requeridas."
+[[ -s "$VERSION_FILE" ]] || beta_install_error "El paquete no contiene VERSION."
+VERSION="$(tr -d '\r\n' < "$VERSION_FILE")"
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] \
+  || beta_install_error "La versión del paquete es inválida."
+
+export HEXTUNNEL_PACKAGE_ROOT="$ROOT"
+bash "$PREFLIGHT"
+
+runtime_installer="$(mktemp /tmp/hextunnel-beta-original.XXXXXX.sh)"
+trap 'rm -f "${runtime_installer:-}"' EXIT
+bash "$PREPARER" "$LEGACY_INSTALLER" "$runtime_installer" beta
+
+export HEXTUNNEL_NO_REBOOT=1
+bash "$runtime_installer" "$@"
+bash "$FINALIZER"
+
+trap - EXIT
+rm -f "$runtime_installer"
+
+install -d -m 700 /etc/hextunnel
+cat > /etc/hextunnel/beta-state.env <<EOF
+HEXTUNNEL_CHANNEL=release-candidate
+HEXTUNNEL_VERSION=$(printf '%q' "$VERSION")
+HEXTUNNEL_SOURCE_SHA=$(printf '%q' "$HEXTUNNEL_BETA_SOURCE_SHA")
+HEXTUNNEL_INSTALLED_AT=$(printf '%q' "$(date -u +%Y-%m-%dT%H:%M:%SZ)")
+EOF
+chmod 600 /etc/hextunnel/beta-state.env
+
+if [[ -x /usr/local/bin/menu ]]; then
+  if [[ -t 0 && -t 1 ]]; then
+    exec /usr/local/bin/menu
+  fi
+  printf 'Release candidate instalada. Abre el panel con: sudo menu\n'
+  exit 0
+fi
+
+beta_install_error "La instalación terminó, pero no se creó /usr/local/bin/menu."

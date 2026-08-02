@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+ROOT="${HEXTUNNEL_INSTALL_DIR:-/opt/hextunnel}"
+[[ -f "$ROOT/lib/common.sh" ]] || ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+for file in common logging backup rollback systemd firewall secrets validation modules update; do
+  source "$ROOT/lib/$file.sh"
+done
+HEXTUNNEL_DRY_RUN="${HEXTUNNEL_DRY_RUN:-0}"
+init_logging
+load_runtime_config
+load_hextunnel_secrets
+load_module_registry
+HEXTUNNEL_ARCH="$(normalize_architecture)"
+export HEXTUNNEL_ARCH
+
+usage() {
+  cat <<'EOF'
+hextunnel-update check [--channel stable|testing]
+hextunnel-update apply <framework|xray|hysteria2|zivpn> [--channel stable|testing]
+EOF
+}
+
+command="${1:-check}"
+shift || true
+component=""
+if [[ "$command" == apply ]]; then component="${1:-}"; shift || true; fi
+while (($# > 0)); do
+  case "$1" in
+    --channel) shift; HEXTUNNEL_UPDATE_CHANNEL="${1:-}" ;;
+    --channel=*) HEXTUNNEL_UPDATE_CHANNEL="${1#*=}" ;;
+    --dry-run) HEXTUNNEL_DRY_RUN=1 ;;
+    *) die "Opción desconocida: $1" ;;
+  esac
+  shift
+done
+export HEXTUNNEL_UPDATE_CHANNEL HEXTUNNEL_DRY_RUN
+case "$command" in
+  check) update_show_manifest ;;
+  apply) [[ -n "$component" ]] || { usage; exit 64; }; update_component "$component" ;;
+  help|--help|-h) usage ;;
+  *) usage; exit 64 ;;
+esac

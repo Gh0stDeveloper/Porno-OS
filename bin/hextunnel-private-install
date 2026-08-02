@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+private_install_error() {
+  printf 'ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
+[[ "${EUID:-$(id -u)}" -eq 0 ]] || private_install_error "La instalación privada debe ejecutarse como root."
+[[ "${HEXTUNNEL_LICENSE_PREVALIDATED:-0}" == 1 ]] \
+  || private_install_error "El paquete privado solo puede ejecutarse después de validar la licencia."
+
+ROOT="${HEXTUNNEL_PRIVATE_PACKAGE_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)}"
+
+if [[ "${HEXTUNNEL_OPERATION:-install}" == upgrade ]]; then
+  [[ -x "$ROOT/bin/hextunnel-private-upgrade" ]] \
+    || private_install_error "El paquete no contiene el actualizador privado."
+  exec bash "$ROOT/bin/hextunnel-private-upgrade" "$@"
+fi
+
+architecture="$(uname -m)"
+case "$architecture" in
+  aarch64|arm64)
+    [[ -f "$ROOT/install.sh" ]] || private_install_error "El paquete no contiene el instalador modular."
+    [[ -f "$ROOT/bin/hextunnel-arm64-menu" ]] || private_install_error "El paquete no contiene el menú ARM64."
+    [[ -f "$ROOT/bin/hextunnel-install-license-runtime" ]] \
+      || private_install_error "El paquete no contiene el runtime de licencia."
+
+    export HEXTUNNEL_PACKAGE_ROOT="$ROOT"
+    export HEXTUNNEL_PRIVATE_PACKAGE_ROOT="$ROOT"
+    export HEXTUNNEL_NO_REBOOT=1
+
+    printf 'Arquitectura ARM64 detectada. Instalando el perfil nativo verificado...\n'
+    bash "$ROOT/install.sh" install \
+      --modules=ssh,xray,hysteria,hysteria2,zivpn,webmin \
+      --non-interactive \
+      --no-reboot
+
+    install -m 0755 "$ROOT/bin/hextunnel-arm64-menu" /usr/local/bin/menu
+    bash /opt/hextunnel/bin/hextunnel-install-license-runtime
+
+    printf '\nInstalación ARM64 completada.\n'
+    printf 'Panel: sudo menu\n'
+    printf 'Estado: sudo hextunnel status\n'
+    printf 'Licencia: sudo hextunnel-license status\n'
+    printf 'Actualización: sudo hextunnel-upgrade\n'
+    exit 0
+    ;;
+  x86_64|amd64)
+    ;;
+  *)
+    private_install_error "Arquitectura no soportada: $architecture. Usa amd64/x86_64 o arm64/aarch64."
+    ;;
+esac
+
+LEGACY_INSTALLER="$ROOT/legacy/install-all.sh"
+PREFLIGHT="$ROOT/bin/hextunnel-legacy-preflight"
+FINALIZER="$ROOT/bin/hextunnel-finalize-install"
+PREPARER="$ROOT/scripts/prepare-legacy-runtime.sh"
+LICENSE_RUNTIME="$ROOT/bin/hextunnel-install-license-runtime"
+[[ -f "$LEGACY_INSTALLER" ]] || private_install_error "No se encontró el instalador original completo."
+[[ -f "$PREFLIGHT" && -f "$FINALIZER" && -f "$PREPARER" && -f "$LICENSE_RUNTIME" ]] \
+  || private_install_error "El paquete privado no contiene las fases protegidas requeridas."
+
+export HEXTUNNEL_PACKAGE_ROOT="$ROOT"
+bash "$PREFLIGHT"
+
+runtime_installer="$(mktemp /tmp/hextunnel-original.XXXXXX.sh)"
+trap 'rm -f "${runtime_installer:-}"' EXIT
+bash "$PREPARER" "$LEGACY_INSTALLER" "$runtime_installer" licensed
+
+unset HEXTUNNEL_LICENSE_KEY
+export HEXTUNNEL_NO_REBOOT=1
+bash "$runtime_installer" "$@"
+bash "$FINALIZER"
+bash /opt/hextunnel/bin/hextunnel-install-license-runtime
+
+trap - EXIT
+rm -f "$runtime_installer"
+
+if [[ -x /usr/local/bin/menu ]]; then
+  if [[ -t 0 && -t 1 ]]; then
+    exec /usr/local/bin/menu
+  fi
+  printf 'Instalación completada. Abre el panel con: sudo menu\n'
+  printf 'Estado de licencia: sudo hextunnel license status\n'
+  printf 'Actualización privada: sudo hextunnel upgrade\n'
+  exit 0
+fi
+
+private_install_error "La instalación terminó, pero no se creó /usr/local/bin/menu."
