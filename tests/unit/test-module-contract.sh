@@ -34,6 +34,15 @@ for module in "${HEXTUNNEL_AVAILABLE_MODULES[@]}"; do
   done < <(module_call "$module" ports || true)
 done
 
+# Existing SSH listeners are valid during upgrades, but only on managed SSH
+# ports and only when the owning process is sshd/systemd.
+ssh_allow_port_conflict tcp 22 'users:(("sshd",pid=1,fd=3))'
+ssh_allow_port_conflict tcp 299 'users:(("sshd",pid=2,fd=3))'
+ssh_allow_port_conflict tcp 299 'users:(("systemd",pid=1,fd=99))'
+! ssh_allow_port_conflict tcp 299 'users:(("nginx",pid=3,fd=4))'
+! ssh_allow_port_conflict tcp 443 'users:(("sshd",pid=4,fd=5))'
+! ssh_allow_port_conflict udp 299 'users:(("sshd",pid=5,fd=6))'
+
 HEXTUNNEL_ARCH=arm64
 export HEXTUNNEL_ARCH
 for module in ssh xray hysteria hysteria2 zivpn webmin; do
