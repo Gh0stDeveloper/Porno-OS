@@ -28,10 +28,16 @@ validate_operating_system() {
 
 validate_architecture() {
   HEXTUNNEL_ARCH="$(normalize_architecture)" || die "Arquitectura no reconocida: $(uname -m)."
-  if [[ "$HEXTUNNEL_ARCH" != amd64 && "${HEXTUNNEL_ALLOW_UNTESTED_PLATFORM:-0}" != 1 ]]; then
-    die "La edición de producción está validada únicamente para amd64/x86_64; arquitectura detectada: $HEXTUNNEL_ARCH."
-  fi
-  [[ "$HEXTUNNEL_ARCH" == amd64 ]] || log_warn "Arquitectura experimental habilitada: $HEXTUNNEL_ARCH"
+  case "$HEXTUNNEL_ARCH" in
+    amd64|arm64) ;;
+    *)
+      if [[ "${HEXTUNNEL_ALLOW_UNTESTED_PLATFORM:-0}" == 1 ]]; then
+        log_warn "Arquitectura experimental habilitada: $HEXTUNNEL_ARCH"
+      else
+        die "Arquitectura de producción no soportada: $HEXTUNNEL_ARCH. Usa amd64/x86_64 o arm64/aarch64."
+      fi
+      ;;
+  esac
   export HEXTUNNEL_ARCH
 }
 
@@ -125,11 +131,14 @@ preflight_all() {
   command_exists flock || die "util-linux/flock es obligatorio."
   validate_operating_system
   validate_architecture
+  if declare -F validate_module_architectures >/dev/null 2>&1; then
+    validate_module_architectures "$@"
+  fi
   validate_system_state
   validate_resources
   validate_connectivity
   validate_requested_ports "$@"
-  log_success "Preflight correcto: plataforma, systemd, reloj, RAM, disco, red y puertos."
+  log_success "Preflight correcto: plataforma, arquitectura, systemd, reloj, RAM, disco, red y puertos."
 }
 
 validate_selected_modules() {
