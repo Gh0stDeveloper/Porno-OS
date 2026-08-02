@@ -77,6 +77,9 @@ grep -q 'hextunnel-arm64-menu' bin/hextunnel-private-install
 grep -q 'install_framework' bin/hextunnel-private-upgrade
 grep -q 'hextunnel-license-renew.timer' bin/hextunnel-install-license-runtime
 grep -q 'https://ghostdeveloper.duckdns.org/install.sh' bin/hextunnel-install-license-runtime
+grep -q 'bash -n "$tmp"' bin/hextunnel-install-license-runtime
+grep -q 'hextunnel-arm64-menu' bin/hextunnel-install-license-runtime
+grep -q '/usr/local/bin/menu.new' bin/hextunnel-install-license-runtime
 grep -q 'openssl dgst -sha256 -verify' bin/hextunnel-license
 grep -q '@Gh0stDeveloper' bin/hextunnel-install-license-runtime
 grep -q '@Jotchua_DevzZ' bin/hextunnel-install-license-runtime
@@ -93,9 +96,9 @@ grep -q 'bash "$PREFLIGHT"' bin/hextunnel-beta-install
 grep -q 'bash "$PREPARER".*beta' bin/hextunnel-beta-install
 grep -q 'bash "$FINALIZER"' bin/hextunnel-beta-install
 grep -q 'exec /usr/local/bin/menu' bin/hextunnel-beta-install
-grep -q '1.0.0-rc.2' docs/BETA.md
+grep -q '1.0.0-rc.3' docs/BETA.md
 
-grep -q '^1\.0\.0-rc\.2$' VERSION
+grep -q '^1\.0\.0-rc\.3$' VERSION
 grep -q 'debian:12|ubuntu:22.04|ubuntu:24.04' lib/validation.sh
 grep -q 'amd64|arm64' lib/validation.sh
 grep -q 'aarch64|arm64' lib/validation.sh
