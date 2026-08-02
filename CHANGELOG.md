@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.0-rc.3 — 2026-08-01
+
+- El runtime de actualización renueva el panel ARM64 desde el paquete instalado.
+- El wrapper del menú AMD64 se reconstruye de forma segura sin sobrescribir el menú original.
+- El bootstrap de actualización valida sintaxis Bash antes de ejecutarse.
+- Las pruebas de licencia exigen que la actualización conserve y refresque el menú correspondiente a la arquitectura.
+- La publicación comercial ejecuta el gate completo de producción antes de registrar el paquete.
+
 ## 1.0.0-rc.2 — 2026-08-01
 
 - Distribución comercial protegida mediante key, autorización por IP, nonce y timestamp.
@@ -40,4 +48,4 @@
 
 ## Unreleased
 
-- Validación integral pendiente en una VPS ARM64 limpia antes de declarar la release estable.
+- Validación integral pendiente en VPS AMD64 y ARM64 limpias antes de declarar la release estable.
