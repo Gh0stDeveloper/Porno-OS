@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.0-rc.2 — 2026-08-01
+
+- Distribución comercial protegida mediante key, autorización por IP, nonce y timestamp.
+- Descarga privada temporal, de un solo uso y verificada mediante firma RSA y SHA-256.
+- Runtime de licencia con `status`, `renew`, `remaining` y renovación periódica mediante systemd.
+- Actualización privada transaccional mediante `hextunnel-upgrade`.
+- Soporte de producción para `arm64/aarch64` en Debian 12 y Ubuntu 22.04/24.04.
+- Instalación ARM64 mediante perfil modular nativo en lugar del instalador heredado AMD64.
+- Perfil ARM64 con SSH/TLS, Xray, Hysteria v1, Hysteria 2, ZiVPN y Webmin.
+- Sing-box y ZiVPN seleccionan el artefacto ARM64 y verifican el digest SHA-256 publicado por GitHub.
+- Panel `menu` específico para ARM64 con estado, diagnóstico, cuentas, licencia y actualización.
+- Validación de compatibilidad de cada módulo antes de modificar el VPS.
+- UDP Custom, SlowDNS heredado, SlipStream dependiente de SlowDNS y `legacy-all` permanecen bloqueados en ARM64 hasta disponer de artefactos oficiales, reproducibles y verificables.
+
 ## 1.0.0-rc.1 — 2026-07-26
 
 - Arquitectura Bash manual y modular; sin generadores Python.
@@ -26,4 +40,4 @@
 
 ## Unreleased
 
-- Integración futura con bot, API de licencias y servidor privado de distribución.
+- Validación integral pendiente en una VPS ARM64 limpia antes de declarar la release estable.
