@@ -1,0 +1,88 @@
+name: ARM64 contract
+
+on:
+  push:
+    branches: ['feat/**', 'fix/**', 'release/**', 'main']
+    paths:
+      - install.sh
+      - bin/**
+      - lib/**
+      - modules/**
+      - config/**
+      - tests/**
+      - .github/workflows/arm64-contract.yml
+  pull_request:
+    paths:
+      - install.sh
+      - bin/**
+      - lib/**
+      - modules/**
+      - config/**
+      - tests/**
+      - .github/workflows/arm64-contract.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  arm64-contract:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Confirm native ARM64 runner
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          case "$(uname -m)" in
+            aarch64|arm64) ;;
+            *) echo "Expected ARM64 runner, got $(uname -m)" >&2; exit 1 ;;
+          esac
+          dpkg --print-architecture | grep -qx arm64
+
+      - name: Install validation tools
+        run: sudo apt-get update -y && sudo apt-get install -y shellcheck jq curl ca-certificates iproute2 util-linux
+
+      - name: Validate Bash and architecture policy
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          bash -n install.sh
+          bash -n bin/hextunnel-private-install
+          bash -n bin/hextunnel-arm64-menu
+          bash -n lib/architecture.sh
+          bash -n lib/modules.sh
+          bash -n lib/validation.sh
+          shellcheck --severity=error -x \
+            install.sh \
+            bin/hextunnel-private-install \
+            bin/hextunnel-arm64-menu \
+            lib/architecture.sh \
+            lib/modules.sh \
+            lib/validation.sh
+          bash tests/unit/test-module-contract.sh
+          bash tests/security/test-hardening.sh
+
+      - name: Run native ARM64 installer dry-run
+        shell: bash
+        run: sudo -E bash tests/integration/test-dry-run.sh
+
+      - name: Assert unsupported modules fail before installation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for module in udp-custom slowdns slipstream legacy-all; do
+            if sudo -E env \
+              HEXTUNNEL_DRY_RUN=1 \
+              HEXTUNNEL_NON_INTERACTIVE=1 \
+              HEXTUNNEL_NO_REBOOT=1 \
+              bash ./install.sh install "$module" --dry-run --non-interactive --no-reboot \
+              >"/tmp/${module}.log" 2>&1; then
+              echo "$module unexpectedly passed ARM64 preflight" >&2
+              cat "/tmp/${module}.log" >&2
+              exit 1
+            fi
+            grep -Fq "Módulos no disponibles de forma segura para arm64" "/tmp/${module}.log"
+          done
