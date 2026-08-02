@@ -19,6 +19,15 @@ slowdns_supported_architectures() { printf '%s\n' amd64; }
 slipstream_supported_architectures() { printf '%s\n' amd64; }
 legacy_all_supported_architectures() { printf '%s\n' amd64; }
 
+# An already-installed Hex Tunnel legitimately has sshd listening on both SSH
+# ports. Keep rejecting every unrelated process and every unrelated port.
+ssh_allow_port_conflict() {
+  local protocol="$1" port="$2" owner="$3"
+  [[ "$protocol" == tcp \
+    && ("$port" == 22 || "$port" == 299) \
+    && ("$owner" == *sshd* || "$owner" == *systemd*) ]]
+}
+
 module_supports_architecture() {
   local module="$1" architecture="${2:-$(hextunnel_current_architecture)}"
   local function supported
