@@ -26,14 +26,38 @@ HEXTUNNEL_NO_REBOOT=1
 HEXTUNNEL_FORCE=1
 export HEXTUNNEL_DRY_RUN HEXTUNNEL_NON_INTERACTIVE HEXTUNNEL_NO_REBOOT HEXTUNNEL_FORCE
 
+installed_modules=()
+for module in "${HEXTUNNEL_AVAILABLE_MODULES[@]}"; do
+  module_is_installed "$module" && installed_modules+=("$module")
+done
+
 transaction_begin licensed-framework-upgrade
 trap 'transaction_fail "$?" "$LINENO" "$BASH_COMMAND"' ERR INT TERM
+
+backup_paths \
+  /usr/local/bin/menu \
+  /usr/local/lib/hextunnel/menu-original \
+  /usr/local/bin/hextunnel-license \
+  /usr/local/bin/hextunnel-upgrade \
+  /etc/systemd/system/hextunnel-license-renew.service \
+  /etc/systemd/system/hextunnel-license-renew.timer
+
 install_framework
+bash /opt/hextunnel/bin/hextunnel-install-license-runtime
+
+for module in "${installed_modules[@]}"; do
+  module_validate "$module"
+done
+
+/usr/local/bin/hextunnel version
+/usr/local/bin/hextunnel-license status >/dev/null
+systemctl is-enabled --quiet hextunnel-license-renew.timer
+systemctl is-active --quiet hextunnel-license-renew.timer
+
 transaction_commit
 trap - ERR INT TERM
 
-bash /opt/hextunnel/bin/hextunnel-install-license-runtime
-/usr/local/bin/hextunnel version
-printf 'Hex Tunnel actualizado de forma segura. Los servicios de red instalados se conservaron.\n'
+printf 'Hex Tunnel actualizado y validado de forma transaccional.\n'
+printf 'Módulos comprobados: %s\n' "${installed_modules[*]:-ninguno}"
 printf 'Comprueba el sistema con: sudo hextunnel doctor\n'
-printf 'Estado de licencia: sudo hextunnel license status\n'
+printf 'Estado de licencia: sudo hextunnel-license status\n'
