@@ -1,16 +1,33 @@
 # Hex Tunnel
 
-Instalador transaccional y modular para administrar SSH/TLS, Xray, Hysteria v1, Hysteria 2, UDP Custom, SlowDNS, SlipStream, ZiVPN y Webmin en Debian y Ubuntu.
+Hex Tunnel es una plataforma Bash modular y transaccional para desplegar, operar y actualizar servicios de túnel en VPS dedicadas.
 
 ## Estado
 
-- Versión: `1.0.0-rc.1`.
-- Estado del componente local: release candidate con criterios de producción.
-- Uso inmediato: pruebas controladas en VPS reales.
-- Plataformas soportadas: Debian 12, Ubuntu 22.04 LTS y Ubuntu 24.04 LTS sobre amd64.
-- Fuera de este alcance: bot de Telegram, API de licencias y servidor privado de distribución.
+- Versión: `1.0.0-rc.2`.
+- Estado: release candidate privada.
+- Plataformas de producción: Debian 12, Ubuntu 22.04 LTS y Ubuntu 24.04 LTS.
+- Arquitecturas: `amd64/x86_64` y `arm64/aarch64`.
+- Distribución: bootstrap público con licencia, autorización firmada y descarga privada temporal.
 
-La ausencia temporal del bot y del servidor no impide validar el instalador, los módulos, las cuentas, el menú, el rollback, los respaldos ni la persistencia tras reinicio.
+## Perfil AMD64
+
+La instalación comercial AMD64 conserva el instalador completo heredado saneado y después integra el framework modular, la licencia renovable, el diagnóstico, los respaldos y la actualización privada.
+
+## Perfil ARM64
+
+La instalación comercial detecta ARM64 automáticamente y utiliza el framework modular nativo. Incluye:
+
+- SSH, TLS, SSLH y proxy WebSocket.
+- Xray.
+- Hysteria v1 mediante Sing-box ARM64.
+- Hysteria 2.
+- ZiVPN ARM64.
+- Webmin con TLS.
+- Panel `menu` específico para ARM64.
+- Licencia renovable y actualización privada.
+
+Por seguridad, UDP Custom, SlowDNS heredado, SlipStream dependiente de ese SlowDNS y `legacy-all` no se habilitan en ARM64 hasta disponer de artefactos oficiales, reproducibles y verificables. El preflight rechaza esos módulos antes de modificar el VPS.
 
 ## Capacidades
 
@@ -21,48 +38,48 @@ La ausencia temporal del bot y del servidor no impide validar el instalador, los
 - Gestión de cuentas y expiraciones.
 - Diagnóstico sanitizado y auditoría periódica mediante systemd.
 - Respaldo, verificación, cifrado opcional y restauración.
-- Actualizaciones mediante manifiestos firmados y SHA-256.
-- Paquetes de release reproducibles con manifiesto interno.
-- Instalador original completo conservado en `legacy/install-all.sh`.
+- Actualizaciones privadas mediante autorización y paquete verificado.
+- Paquetes reproducibles con manifiesto SHA-256 interno.
+
+## Instalación comercial
+
+El bootstrap público solicita la key, consulta la API de licencias y, cuando la autorización es válida, recibe un enlace privado temporal. La respuesta se verifica mediante RSA y el paquete mediante SHA-256 antes de ejecutar el entrypoint.
+
+```bash
+curl -fsSL https://ghostdeveloper.duckdns.org/install.sh -o /tmp/hextunnel-install.sh
+sudo bash /tmp/hextunnel-install.sh install
+```
 
 ## Comandos instalados
 
 ```bash
+sudo menu
 sudo hextunnel version
 sudo hextunnel preflight
 sudo hextunnel status
 sudo hextunnel doctor
 sudo hextunnel account --help
 sudo hextunnel backup --help
-sudo hextunnel update check
 sudo hextunnel rollback <ID>
-sudo menu
+sudo hextunnel-license status
+sudo hextunnel-upgrade
 ```
-
-## Prueba privada
-
-El bootstrap de prueba exige un SHA completo de commit, aceptación explícita y un VPS limpio con snapshot. Consulta [`docs/BETA.md`](docs/BETA.md).
 
 ## Operación y recuperación
 
 - [`docs/OPERATIONS.md`](docs/OPERATIONS.md)
 - [`docs/RECOVERY.md`](docs/RECOVERY.md)
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- [`docs/PRIVATE_DISTRIBUTION.md`](docs/PRIVATE_DISTRIBUTION.md)
 - [`SECURITY.md`](SECURITY.md)
 
-## Distribución futura
-
-`install.sh`, cuando se usa como bootstrap público aislado, está preparado para validar una licencia HTTPS firmada y descargar después un paquete privado autorizado. El contrato se documenta en [`docs/PRIVATE_DISTRIBUTION.md`](docs/PRIVATE_DISTRIBUTION.md). Esa integración se activará cuando se desarrollen el bot y el servidor.
-
-## Desarrollo local
+## Desarrollo y validación
 
 ```bash
-sudo ./install.sh
 sudo ./install.sh install ssh xray hysteria2 --no-reboot
 sudo ./install.sh uninstall xray
 sudo ./install.sh doctor
 sudo ./install.sh rollback
-sudo ./install.sh legacy
 bash scripts/production-readiness.sh
 bash scripts/build-release.sh dist
 ```
