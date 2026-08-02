@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+[[ "${EUID:-$(id -u)}" -eq 0 ]] || exec sudo -E "$0" "$@"
+
+while true; do
+  command -v clear >/dev/null 2>&1 && clear || true
+  printf '\033[1;36m============================================================\033[0m\n'
+  printf '\033[1;37m                    HEX TUNNEL ARM64\033[0m\n'
+  printf '\033[0;36m          @Gh0stDeveloper  ·  @Jotchua_DevzZ\033[0m\n'
+  if [[ -x /usr/local/bin/hextunnel-license ]]; then
+    printf '\033[0;32mLicencia restante: %s\033[0m\n' \
+      "$(/usr/local/bin/hextunnel-license remaining 2>/dev/null || printf desconocido)"
+  fi
+  printf '\033[1;36m============================================================\033[0m\n'
+  cat <<'EOF'
+
+  1) Estado de módulos
+  2) Diagnóstico completo
+  3) Administrar cuentas
+  4) Estado de licencia
+  5) Renovar licencia
+  6) Actualizar Hex Tunnel
+  7) Instalar módulo adicional
+  8) Desinstalar módulo
+  0) Salir
+EOF
+  printf '\nArquitectura: %s\n' "$(uname -m)"
+  read -r -p 'Selecciona una opción: ' option
+  case "$option" in
+    1) hextunnel status ;;
+    2) hextunnel doctor ;;
+    3) hextunnel account ;;
+    4) hextunnel-license status ;;
+    5) hextunnel-license renew ;;
+    6) hextunnel-upgrade ;;
+    7)
+      printf 'Módulos ARM64 disponibles: ssh xray hysteria hysteria2 zivpn webmin\n'
+      read -r -p 'Módulo: ' module
+      hextunnel install "$module" --no-reboot
+      ;;
+    8)
+      read -r -p 'Módulo: ' module
+      hextunnel uninstall "$module"
+      ;;
+    0) exit 0 ;;
+    *) printf 'Opción inválida.\n' ;;
+  esac
+  printf '\n'
+  read -r -p 'Presiona Enter para continuar...' _
+done
