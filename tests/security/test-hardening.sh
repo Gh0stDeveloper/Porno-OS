@@ -71,6 +71,9 @@ grep -q 'bash "$PREPARER".*licensed' bin/hextunnel-private-install
 grep -q 'bash "$FINALIZER"' bin/hextunnel-private-install
 grep -q 'exec /usr/local/bin/menu' bin/hextunnel-private-install
 grep -q 'HEXTUNNEL_OPERATION:-install' bin/hextunnel-private-install
+grep -q 'Arquitectura ARM64 detectada' bin/hextunnel-private-install
+grep -q -- '--modules=ssh,xray,hysteria,hysteria2,zivpn,webmin' bin/hextunnel-private-install
+grep -q 'hextunnel-arm64-menu' bin/hextunnel-private-install
 grep -q 'install_framework' bin/hextunnel-private-upgrade
 grep -q 'hextunnel-license-renew.timer' bin/hextunnel-install-license-runtime
 grep -q 'https://ghostdeveloper.duckdns.org/install.sh' bin/hextunnel-install-license-runtime
@@ -94,7 +97,13 @@ grep -q '1.0.0-rc.2' docs/BETA.md
 
 grep -q '^1\.0\.0-rc\.2$' VERSION
 grep -q 'debian:12|ubuntu:22.04|ubuntu:24.04' lib/validation.sh
-grep -q 'validada únicamente para amd64' lib/validation.sh
+grep -q 'amd64|arm64' lib/validation.sh
+grep -q 'aarch64|arm64' lib/validation.sh
+grep -q 'udp_custom_supported_architectures.*amd64' lib/architecture.sh
+grep -q 'slowdns_supported_architectures.*amd64' lib/architecture.sh
+grep -q 'legacy_all_supported_architectures.*amd64' lib/architecture.sh
+grep -q 'unset HEXTUNNEL_SINGBOX_SHA256' lib/architecture.sh
+grep -q 'unset HEXTUNNEL_ZIVPN_SHA256' lib/architecture.sh
 grep -q 'operation_lock_acquire' lib/rollback.sh
 grep -q HEXTUNNEL_OPERATION_LOCK_FILE lib/common.sh
 grep -q /run/lock/hextunnel-operation.lock lib/common.sh
