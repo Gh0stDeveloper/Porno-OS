@@ -33,4 +33,30 @@ for module in "${HEXTUNNEL_AVAILABLE_MODULES[@]}"; do
     [[ -z "${scope:-}" || "$scope" =~ ^(any|public)$ ]]
   done < <(module_call "$module" ports || true)
 done
+
+HEXTUNNEL_ARCH=arm64
+export HEXTUNNEL_ARCH
+for module in ssh xray hysteria hysteria2 zivpn webmin; do
+  module_supports_architecture "$module" arm64 || {
+    printf 'expected ARM64 support for %s\n' "$module" >&2
+    exit 1
+  }
+done
+for module in udp-custom slowdns slipstream legacy-all; do
+  if module_supports_architecture "$module" arm64; then
+    printf 'unexpected ARM64 support for %s\n' "$module" >&2
+    exit 1
+  fi
+done
+
+HEXTUNNEL_SINGBOX_SHA256=amd64-checksum
+HEXTUNNEL_ZIVPN_SHA256=amd64-checksum
+prepare_module_architecture_environment hysteria
+prepare_module_architecture_environment zivpn
+[[ -z "${HEXTUNNEL_SINGBOX_SHA256+x}" ]]
+[[ -z "${HEXTUNNEL_ZIVPN_SHA256+x}" ]]
+
+mapfile -t arm64_defaults < <(hextunnel_arm64_default_modules)
+[[ "${arm64_defaults[*]}" == "ssh xray hysteria hysteria2 zivpn webmin" ]]
+
 printf 'module contracts: ok\n'
