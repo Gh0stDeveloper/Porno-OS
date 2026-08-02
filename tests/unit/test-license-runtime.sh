@@ -41,9 +41,21 @@ grep -Fq 'bash -n "$tmp"' "$ROOT/bin/hextunnel-install-license-runtime"
 grep -Fq '@Gh0stDeveloper' "$ROOT/bin/hextunnel-install-license-runtime"
 grep -Fq '@Jotchua_DevzZ' "$ROOT/bin/hextunnel-install-license-runtime"
 grep -Fq 'HEXTUNNEL_OPERATION:-install' "$ROOT/bin/hextunnel-private-install"
-grep -Fq 'install_framework' "$ROOT/bin/hextunnel-private-upgrade"
-grep -Fq 'hextunnel-install-license-runtime' "$ROOT/bin/hextunnel-private-upgrade"
-! grep -Eq 'install_selected_modules|legacy/install-all' "$ROOT/bin/hextunnel-private-upgrade"
+
+upgrade="$ROOT/bin/hextunnel-private-upgrade"
+grep -Fq 'transaction_begin licensed-framework-upgrade' "$upgrade"
+grep -Fq 'backup_paths' "$upgrade"
+grep -Fq '/usr/local/bin/menu' "$upgrade"
+grep -Fq 'install_framework' "$upgrade"
+grep -Fq 'hextunnel-install-license-runtime' "$upgrade"
+grep -Fq 'module_validate "$module"' "$upgrade"
+grep -Fq 'hextunnel-license status' "$upgrade"
+grep -Fq 'systemctl is-active --quiet hextunnel-license-renew.timer' "$upgrade"
+commit_line="$(grep -nF 'transaction_commit' "$upgrade" | cut -d: -f1)"
+validation_line="$(grep -nF 'module_validate "$module"' "$upgrade" | cut -d: -f1)"
+runtime_line="$(grep -nF 'hextunnel-install-license-runtime' "$upgrade" | tail -n1 | cut -d: -f1)"
+[[ "$commit_line" -gt "$validation_line" && "$commit_line" -gt "$runtime_line" ]]
+! grep -Eq 'install_selected_modules|legacy/install-all' "$upgrade"
 
 [[ "$(tr -d '\r\n' < "$ROOT/VERSION")" == '1.0.0-rc.3' ]]
 echo 'license runtime: ok'
