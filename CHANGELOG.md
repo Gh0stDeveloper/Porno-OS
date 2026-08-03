@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.0-rc.5 — 2026-08-03
+
+- La publicación fija por separado las URLs y los SHA-256 de ZiVPN para AMD64 y ARM64.
+- El instalador ARM64 usa el checksum incluido en la release y ya no depende de que GitHub publique el campo `digest`.
+- El gate de producción exige artefactos ZiVPN verificables para ambas arquitecturas.
+- Se añade una prueba de regresión para impedir que el checksum AMD64 se elimine sin sustituirse por el checksum ARM64.
+
 ## 1.0.0-rc.4 — 2026-08-03
 
 - La expiración de la key se considera únicamente el límite para realizar la primera activación.
