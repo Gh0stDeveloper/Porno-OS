@@ -45,12 +45,12 @@ package_manager_wait() {
     elapsed=$((SECONDS - started))
     remaining=$((deadline - SECONDS))
     if ((remaining <= 0)); then
-      snapshot="$(package_manager_process_snapshot | head -n 3 | paste -sd ';' -)"
+      snapshot="$(package_manager_process_snapshot | paste -sd ';' -)"
       die "APT/DPKG continúa ocupado después de ${timeout}s. Proceso detectado: ${snapshot:-desconocido}."
     fi
 
     if ((SECONDS >= next_report)); then
-      snapshot="$(package_manager_process_snapshot | head -n 3 | paste -sd ';' -)"
+      snapshot="$(package_manager_process_snapshot | paste -sd ';' -)"
       log_info "APT/DPKG ocupado; esperando sin interrumpirlo. Transcurrido=${elapsed}s restante<=${remaining}s proceso=${snapshot:-detectado-sin-detalle}"
       next_report=$((SECONDS + heartbeat))
     fi
