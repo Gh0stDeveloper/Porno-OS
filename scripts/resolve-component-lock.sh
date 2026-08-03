@@ -59,9 +59,13 @@ IFS=$'\t' read -r SINGBOX_URL SINGBOX_SHA < <(
   release_asset SagerNet/sing-box "v${SINGBOX_VERSION}" \
     "sing-box_${SINGBOX_VERSION}_linux_amd64.deb" "$WORK/sing-box.deb"
 )
-IFS=$'\t' read -r ZIVPN_URL ZIVPN_SHA < <(
+IFS=$'\t' read -r ZIVPN_AMD64_URL ZIVPN_AMD64_SHA < <(
   release_asset zahidbd2/udp-zivpn "$ZIVPN_VERSION" \
-    udp-zivpn-linux-amd64 "$WORK/zivpn"
+    udp-zivpn-linux-amd64 "$WORK/zivpn-amd64"
+)
+IFS=$'\t' read -r ZIVPN_ARM64_URL ZIVPN_ARM64_SHA < <(
+  release_asset zahidbd2/udp-zivpn "$ZIVPN_VERSION" \
+    udp-zivpn-linux-arm64 "$WORK/zivpn-arm64"
 )
 
 {
@@ -81,14 +85,21 @@ IFS=$'\t' read -r ZIVPN_URL ZIVPN_SHA < <(
   emit_default HEXTUNNEL_SINGBOX_BINARY_URL "$SINGBOX_URL"
   emit_default HEXTUNNEL_SINGBOX_SHA256 "$SINGBOX_SHA"
   emit_default HEXTUNNEL_ZIVPN_VERSION "$ZIVPN_VERSION"
-  emit_default HEXTUNNEL_ZIVPN_BINARY_URL "$ZIVPN_URL"
-  emit_default HEXTUNNEL_ZIVPN_SHA256 "$ZIVPN_SHA"
+  emit_default HEXTUNNEL_ZIVPN_AMD64_BINARY_URL "$ZIVPN_AMD64_URL"
+  emit_default HEXTUNNEL_ZIVPN_AMD64_SHA256 "$ZIVPN_AMD64_SHA"
+  emit_default HEXTUNNEL_ZIVPN_ARM64_BINARY_URL "$ZIVPN_ARM64_URL"
+  emit_default HEXTUNNEL_ZIVPN_ARM64_SHA256 "$ZIVPN_ARM64_SHA"
+  # Compatibilidad con instalaciones y herramientas que todavía leen las variables genéricas.
+  emit_default HEXTUNNEL_ZIVPN_BINARY_URL "$ZIVPN_AMD64_URL"
+  emit_default HEXTUNNEL_ZIVPN_SHA256 "$ZIVPN_AMD64_SHA"
 } > "$OUTPUT"
 chmod 600 "$OUTPUT"
 
 bash -n "$OUTPUT"
 grep -Eq '^HEXTUNNEL_COMPONENT_LOCK_VERSION=1$' "$OUTPUT"
-for sha in "$UDP_SHA" "$SLOWDNS_SHA" "$BADVPN_SHA" "$SINGBOX_SHA" "$ZIVPN_SHA"; do
+for sha in \
+  "$UDP_SHA" "$SLOWDNS_SHA" "$BADVPN_SHA" "$SINGBOX_SHA" \
+  "$ZIVPN_AMD64_SHA" "$ZIVPN_ARM64_SHA"; do
   [[ "$sha" =~ ^[0-9a-f]{64}$ ]] || { printf 'ERROR: lock contiene SHA-256 inválido\n' >&2; exit 1; }
 done
 
