@@ -77,11 +77,16 @@ restore_transaction_files() {
 }
 
 restore_transaction_services() {
-  local dir="$1" marker service enabled active
+  local dir="$1" marker service enabled active load_state
   [[ -f "$dir/services.manifest" ]] || return 0
   systemctl daemon-reload >/dev/null 2>&1 || true
   while IFS='|' read -r marker service enabled active; do
     [[ "$marker" == SERVICE ]] || continue
+    load_state="$(systemctl show -p LoadState --value "$service" 2>/dev/null || true)"
+    if [[ -z "$load_state" || "$load_state" == not-found ]]; then
+      systemctl reset-failed "$service" >/dev/null 2>&1 || true
+      continue
+    fi
     if [[ "$enabled" == enabled ]]; then
       systemctl enable "$service" >/dev/null 2>&1 || log_warn "No se pudo restaurar enable de $service"
     else
@@ -93,6 +98,7 @@ restore_transaction_services() {
       systemctl stop "$service" >/dev/null 2>&1 || true
     fi
   done < "$dir/services.manifest"
+  systemctl reset-failed >/dev/null 2>&1 || true
 }
 
 restore_created_users() {
