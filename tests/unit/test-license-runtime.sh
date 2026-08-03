@@ -151,7 +151,9 @@ validation_line="$(grep -nF 'module_validate "$module"' "$upgrade" | cut -d: -f1
 runtime_line="$(grep -nF 'hextunnel-install-license-runtime' "$upgrade" | tail -n1 | cut -d: -f1)"
 [[ "$commit_line" -gt "$validation_line" && "$commit_line" -gt "$runtime_line" ]]
 
-# El estado simulado anterior permanece en rc.4 para comprobar compatibilidad,
-# pero la fuente que se publica en este gate debe ser la release actual.
-[[ "$(tr -d '\r\n' < "$ROOT/VERSION")" == '1.0.0-rc.6' ]]
+# El estado simulado anterior permanece en rc.4 para comprobar compatibilidad.
+# La fuente actual debe conservar un número de release candidate válido sin
+# acoplar este test a cada incremento de versión.
+current_version="$(tr -d '\r\n' < "$ROOT/VERSION")"
+[[ "$current_version" =~ ^1\.0\.0-rc\.[0-9]+$ ]]
 echo 'permanent activation runtime: ok'
