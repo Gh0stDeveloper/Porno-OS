@@ -71,10 +71,14 @@ done
 
 HEXTUNNEL_SINGBOX_SHA256=amd64-checksum
 HEXTUNNEL_ZIVPN_SHA256=amd64-checksum
+HEXTUNNEL_ZIVPN_BINARY_URL=amd64-url
+HEXTUNNEL_ZIVPN_ARM64_SHA256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+HEXTUNNEL_ZIVPN_ARM64_BINARY_URL=arm64-url
 prepare_module_architecture_environment hysteria
 prepare_module_architecture_environment zivpn
 [[ -z "${HEXTUNNEL_SINGBOX_SHA256+x}" ]]
-[[ -z "${HEXTUNNEL_ZIVPN_SHA256+x}" ]]
+[[ "$HEXTUNNEL_ZIVPN_SHA256" == "$HEXTUNNEL_ZIVPN_ARM64_SHA256" ]]
+[[ "$HEXTUNNEL_ZIVPN_BINARY_URL" == "$HEXTUNNEL_ZIVPN_ARM64_BINARY_URL" ]]
 
 mapfile -t arm64_defaults < <(hextunnel_arm64_default_modules)
 [[ "${arm64_defaults[*]}" == "ssh xray hysteria hysteria2 zivpn webmin" ]]
