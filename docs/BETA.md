@@ -1,6 +1,6 @@
-# Hex Tunnel 1.0.0-rc.3 — prueba privada
+# Hex Tunnel 1.0.0-rc.4 — prueba privada
 
-Esta prueba valida en VPS reales la instalación comercial, licencia firmada, renovación, actualización privada y compatibilidad AMD64/ARM64 antes de declarar estable la distribución.
+Esta prueba valida en VPS reales la instalación comercial, activación permanente firmada, reseller, renovación, actualización privada y compatibilidad AMD64/ARM64 antes de declarar estable la distribución.
 
 ## Plataformas
 
@@ -10,16 +10,18 @@ Esta prueba valida en VPS reales la instalación comercial, licencia firmada, re
 - `amd64`/`x86_64`.
 - `arm64`/`aarch64`.
 
-El perfil ARM64 instala SSH/TLS, Xray, Hysteria v1, Hysteria 2, ZiVPN, Webmin, menú nativo y runtime de licencia. Por seguridad, UDP Custom, SlowDNS heredado, SlipStream y `legacy-all` continúan limitados a AMD64 hasta disponer de artefactos ARM64 oficiales y verificables.
+El perfil ARM64 instala SSH/TLS, Xray, Hysteria v1, Hysteria 2, ZiVPN, Webmin, menú nativo y runtime de autorización. Por seguridad, UDP Custom, SlowDNS heredado, SlipStream y `legacy-all` continúan limitados a AMD64 hasta disponer de artefactos ARM64 oficiales y verificables.
 
 ## Separación de canales
 
 - El instalador comercial se publica en `https://ghostdeveloper.duckdns.org/install.sh`.
-- La autorización valida key, IP, nonce, fechas, firma RSA y SHA-256 del paquete.
+- La primera autorización valida key, IP, nonce, fechas, reseller, firma RSA y SHA-256 del paquete.
+- La key solo puede utilizarse una vez y su vencimiento solo aplica antes de activarla.
 - La descarga privada es temporal y de un solo uso.
-- `hextunnel-license` muestra y renueva el lease firmado.
-- `hextunnel-upgrade` vuelve a autorizar la VPS y actualiza el framework sin reinstalar los servicios de red.
-- Desde `1.0.0-rc.3`, la actualización también renueva correctamente el menú AMD64 o ARM64.
+- `hextunnel-license` muestra activación permanente, reseller y lease firmado.
+- `hextunnel-upgrade` utiliza el token de activación local; no requiere ni conserva la key original.
+- Desde `1.0.0-rc.4`, el vencimiento informativo de la key no detiene una instalación activada.
+- La actualización renueva correctamente el menú AMD64 o ARM64.
 - `beta-install.sh` queda reservado para pruebas por commit exacto.
 
 ## Preparación
@@ -33,7 +35,7 @@ El perfil ARM64 instala SSH/TLS, Xray, Hysteria v1, Hysteria 2, ZiVPN, Webmin, m
 
 ## Instalación comercial
 
-Con una licencia emitida por TeleBotGen:
+Con una key emitida por TeleBotGen:
 
 ```bash
 sudo bash -c 'command -v curl >/dev/null 2>&1 || { apt-get update -y && apt-get install -y curl ca-certificates; }; curl -fsSL https://ghostdeveloper.duckdns.org/install.sh -o /tmp/hextunnel-install.sh && chmod 700 /tmp/hextunnel-install.sh && exec /tmp/hextunnel-install.sh install'
@@ -45,13 +47,23 @@ Después:
 sudo hextunnel version
 sudo hextunnel status
 sudo hextunnel-license status
+sudo hextunnel-license reseller
 sudo systemctl status hextunnel-license-renew.timer --no-pager
 sudo menu
 ```
 
+Comprobar que el menú muestre:
+
+```text
+Activación: permanente
+Reseller: <nombre firmado>
+```
+
+El archivo `/etc/hextunnel/license.key` no debe existir después de una activación correcta.
+
 ## Actualización comercial
 
-Cuando `1.0.0-rc.3` sea la release activa:
+Cuando `1.0.0-rc.4` sea la release activa:
 
 ```bash
 sudo hextunnel-upgrade
@@ -61,7 +73,19 @@ sudo hextunnel doctor
 sudo menu
 ```
 
-La actualización debe conservar cuentas, configuraciones, listeners, NAT, firewall y servicios instalados. En ARM64, `menu` debe seguir mostrando el panel ARM64 actualizado; en AMD64 debe conservar el menú heredado detrás del encabezado de Hex Tunnel.
+La actualización debe utilizar `/etc/hextunnel/activation.token`, conservar cuentas, configuraciones, listeners, NAT, firewall y servicios instalados. En ARM64, `menu` debe seguir mostrando el panel ARM64 actualizado; en AMD64 debe conservar el menú heredado detrás del encabezado de Hex Tunnel.
+
+## Prueba del vencimiento de key
+
+En un entorno de prueba controlado:
+
+1. activar una key válida;
+2. confirmar que el estado sea permanente;
+3. simular o esperar que la fecha original de la key quede en el pasado;
+4. ejecutar `sudo hextunnel-license renew`;
+5. ejecutar `sudo hextunnel-upgrade`;
+6. confirmar que ambas acciones funcionen;
+7. revocar administrativamente la instalación y confirmar que la siguiente renovación sea rechazada.
 
 ## Canal beta por commit
 
@@ -99,7 +123,7 @@ Comprobar:
 - Creación, suspensión, renovación y eliminación de cuentas.
 - Renovación del lease sin cambiar la IP vinculada.
 - Actualización privada sin pérdida de configuración.
-- Menú correcto después de una actualización.
+- Menú y reseller correctos después de una actualización.
 - Respaldo creado y verificable.
 
 ## Reinicio
@@ -119,22 +143,22 @@ sudo systemctl status hextunnel-license-renew.timer --no-pager
 sudo menu
 ```
 
-No se acepta una VPS si pierde SSH, puertos, NAT, firewall, licencia, menú o servicios después del reinicio.
+No se acepta una VPS si pierde SSH, puertos, NAT, firewall, activación, reseller, menú o servicios después del reinicio.
 
 ## Datos sensibles
 
 El canal comercial conserva con permisos `600`:
 
 ```text
-/etc/hextunnel/license.key
 /etc/hextunnel/activation.token
 /etc/hextunnel/license-state.env
+/etc/hextunnel/license-public.pem
 ```
 
-Nunca deben compartirse keys, tokens de activación, contraseñas, claves privadas TLS ni respaldos sin cifrar.
+La key original no debe conservarse en el cliente. Nunca deben compartirse tokens de activación, contraseñas, claves privadas TLS ni respaldos sin cifrar.
 
 ## Criterio de aceptación
 
-Se requiere como mínimo una instalación limpia AMD64 y una ARM64, además de pruebas de instalación, conexiones reales, actualización, renovación, reinicio, respaldo y rollback.
+Se requiere como mínimo una instalación limpia AMD64 y una ARM64, además de pruebas de instalación, conexiones reales, activación permanente, reseller, actualización posterior al vencimiento de la key, renovación, revocación, reinicio, respaldo y rollback.
 
 Desarrolladores: `@Gh0stDeveloper` y `@Jotchua_DevzZ`.
