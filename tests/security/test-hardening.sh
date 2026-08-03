@@ -24,6 +24,8 @@ reject '-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----' 'private keys cannot be
 reject 'PermitRootLogin[[:space:]]+yes' 'root password login must require an explicit runtime option'
 reject 'openssl[[:space:]]+rand[[:space:]]+[0-9]+[[:space:]]*>[^\n]*reset-seed' 'SlipStream reset seed must be encoded as hexadecimal text'
 reject 'QNameSuffixRule\(' 'dnsdist rules must remain compatible with supported LTS packages'
+reject 'rm[[:space:]]+-[^\n]*[[:space:]]+/var/(lib/(dpkg|apt)|cache/apt)/[^\n]*lock' 'APT/DPKG lock files must never be deleted'
+reject '(kill|pkill|killall)[^\n]*(unattended-upgr|unattended-upgrade|apt|dpkg)' 'system package manager processes must not be terminated'
 
 if grep -RIE --exclude='*.example' 'chmod[[:space:]]+755[^\n]*(\.key|key\.pem|server\.key)' modules lib bin install.sh beta-install.sh; then
   echo 'private key permissions cannot be executable/world-readable' >&2
@@ -100,9 +102,11 @@ grep -q 'bash "$PREFLIGHT"' bin/hextunnel-beta-install
 grep -q 'bash "$PREPARER".*beta' bin/hextunnel-beta-install
 grep -q 'bash "$FINALIZER"' bin/hextunnel-beta-install
 grep -q 'exec /usr/local/bin/menu' bin/hextunnel-beta-install
-grep -q '1.0.0-rc.6' docs/BETA.md
 
-grep -q '^1\.0\.0-rc\.6$' VERSION
+current_version="$(tr -d '\r\n' < VERSION)"
+[[ "$current_version" =~ ^1\.0\.0-rc\.[0-9]+$ ]]
+grep -Fq "Hex Tunnel $current_version" docs/BETA.md
+
 grep -q 'debian:12|ubuntu:22.04|ubuntu:24.04' lib/validation.sh
 grep -q 'amd64|arm64' lib/validation.sh
 grep -q 'aarch64|arm64' lib/validation.sh
@@ -117,6 +121,10 @@ grep -q 'HEXTUNNEL_ZIVPN_AMD64_SHA256' scripts/resolve-component-lock.sh
 grep -q 'HEXTUNNEL_ZIVPN_ARM64_SHA256' scripts/resolve-component-lock.sh
 grep -Fq '[[ -d "$HEXTUNNEL_ETC" ]] || ensure_dir 700 "$HEXTUNNEL_ETC"' lib/common.sh
 grep -q 'test-runtime-config-readonly.sh' scripts/production-readiness.sh
+grep -q 'package_manager_wait' lib/common.sh
+grep -q 'DPkg::Lock::Timeout' lib/common.sh
+grep -q 'APT::Update::Lock::Timeout' lib/common.sh
+grep -q 'test-package-manager-lock.sh' scripts/production-readiness.sh
 grep -q 'systemctl reset-failed' lib/rollback.sh
 grep -q 'operation_lock_acquire' lib/rollback.sh
 grep -q HEXTUNNEL_OPERATION_LOCK_FILE lib/common.sh
