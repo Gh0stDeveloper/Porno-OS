@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.0-rc.4 — 2026-08-03
+
+- La expiración de la key se considera únicamente el límite para realizar la primera activación.
+- Una instalación activada continúa operativa y renovando leases después del vencimiento de la key, hasta una revocación administrativa.
+- Las actualizaciones utilizan `activation.token`; la key original ya no se conserva ni se reutiliza.
+- El estado local registra activación permanente, fecha de activación y reseller firmado.
+- Los menús AMD64 y ARM64 muestran `Activación: permanente` y el reseller correspondiente.
+- `hextunnel-license status` distingue el vencimiento informativo de la key del estado permanente de la instalación.
+- Las pruebas ejercitan una renovación real después de vencer artificialmente la key.
+
 ## 1.0.0-rc.3 — 2026-08-01
 
 - El runtime de actualización renueva el panel ARM64 desde el paquete instalado.
