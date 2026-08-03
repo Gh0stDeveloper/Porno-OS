@@ -47,13 +47,66 @@ ensure_dir() {
   install -d -m "$mode" "$path"
 }
 
+package_manager_busy() {
+  local process
+  command_exists pgrep || return 1
+  for process in apt apt-get dpkg unattended-upgr unattended-upgrade; do
+    pgrep -x "$process" >/dev/null 2>&1 && return 0
+  done
+  pgrep -f '(^|/)(apt\.systemd\.daily|unattended-upgrade)([[:space:]]|$)' \
+    >/dev/null 2>&1
+}
+
+package_manager_wait() {
+  local timeout="${HEXTUNNEL_APT_LOCK_TIMEOUT:-1200}"
+  local interval="${HEXTUNNEL_APT_LOCK_POLL_INTERVAL:-5}"
+  local deadline announced=0
+
+  [[ "$timeout" =~ ^[0-9]+$ && "$timeout" -ge 1 ]] \
+    || die "HEXTUNNEL_APT_LOCK_TIMEOUT debe ser un entero positivo."
+  [[ "$interval" =~ ^[0-9]+$ && "$interval" -ge 1 ]] \
+    || die "HEXTUNNEL_APT_LOCK_POLL_INTERVAL debe ser un entero positivo."
+
+  deadline=$((SECONDS + timeout))
+  while package_manager_busy; do
+    if ((SECONDS >= deadline)); then
+      die "APT/DPKG continúa ocupado después de ${timeout}s. Espera a que termine unattended-upgrades y vuelve a intentarlo."
+    fi
+    if ((announced == 0)); then
+      log_info "APT/DPKG está ocupado por otra actualización; esperando sin interrumpirla..."
+      announced=1
+    fi
+    sleep "$interval"
+  done
+  ((announced == 0)) || log_info "APT/DPKG quedó disponible; continuando la instalación."
+}
+
 run_cmd() {
+  local command_name="${1:-}" apt_timeout="${HEXTUNNEL_APT_LOCK_TIMEOUT:-1200}"
   if [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]]; then
     log_dry "$(printf '%q ' "$@")"
     return 0
   fi
   log_debug "Ejecutando: $(printf '%q ' "$@")"
-  "$@"
+  case "$command_name" in
+    apt-get|apt)
+      shift
+      package_manager_wait
+      env DEBIAN_FRONTEND="${DEBIAN_FRONTEND:-noninteractive}" \
+        "$command_name" \
+        -o "DPkg::Lock::Timeout=$apt_timeout" \
+        -o "APT::Update::Lock::Timeout=$apt_timeout" \
+        "$@"
+      ;;
+    dpkg)
+      shift
+      package_manager_wait
+      command dpkg "$@"
+      ;;
+    *)
+      "$@"
+      ;;
+  esac
 }
 
 write_file() {
