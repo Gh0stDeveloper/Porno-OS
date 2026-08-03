@@ -10,6 +10,13 @@ fail() {
   exit 1
 }
 
+run_step() {
+  local label="$1"
+  shift
+  printf '\n=== GATE: %s ===\n' "$label"
+  "$@" || fail "falló la etapa: $label"
+}
+
 [[ -s VERSION ]] || fail "falta VERSION"
 VERSION="$(tr -d '\r\n' < VERSION)"
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || fail "VERSION inválida"
@@ -31,6 +38,7 @@ for path in "${required[@]}"; do
 done
 
 if [[ "${HEXTUNNEL_RELEASE_BUILD:-0}" == 1 ]]; then
+  printf '\n=== GATE: component-lock ===\n'
   [[ -s config/component-lock.env ]] || fail "falta config/component-lock.env para construir una release"
   bash -n config/component-lock.env
   grep -q '^HEXTUNNEL_COMPONENT_LOCK_VERSION=1$' config/component-lock.env \
@@ -48,49 +56,58 @@ if [[ "${HEXTUNNEL_RELEASE_BUILD:-0}" == 1 ]]; then
   done
 fi
 
+printf '\n=== GATE: bash-syntax ===\n'
 while IFS= read -r -d '' file; do
-  bash -n "$file"
+  bash -n "$file" || fail "sintaxis Bash inválida: $file"
 done < <(find install.sh beta-install.sh bin lib modules scripts tests legacy -type f \( -name '*.sh' -o -path 'bin/*' \) -print0)
 
 if command -v shellcheck >/dev/null 2>&1; then
+  printf '\n=== GATE: shellcheck ===\n'
   mapfile -d '' shell_files < <(
     find install.sh beta-install.sh bin lib modules scripts tests \
       -type f \( -name '*.sh' -o -path 'bin/*' \) -print0
   )
-  shellcheck --severity=error -x "${shell_files[@]}"
+  shellcheck --severity=error -x "${shell_files[@]}" \
+    || fail "ShellCheck detectó errores"
 fi
 
-bash tests/security/test-hardening.sh
-bash tests/security/test-current-tree.sh
-bash tests/unit/test-core.sh
-bash tests/unit/test-module-contract.sh
-bash tests/unit/test-production-operations.sh
-bash tests/unit/test-license-runtime.sh
-bash tests/unit/test-legacy-runtime.sh
-bash tests/integration/test-syntax.sh
+run_step hardening bash tests/security/test-hardening.sh
+run_step current-tree bash tests/security/test-current-tree.sh
+run_step core bash tests/unit/test-core.sh
+run_step module-contract bash tests/unit/test-module-contract.sh
+run_step production-operations bash tests/unit/test-production-operations.sh
+run_step license-runtime bash tests/unit/test-license-runtime.sh
+run_step legacy-runtime bash tests/unit/test-legacy-runtime.sh
+run_step integration-syntax bash tests/integration/test-syntax.sh
+
+printf '\n=== GATE: integration-dry-run ===\n'
 if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
-  bash tests/integration/test-dry-run.sh
+  bash tests/integration/test-dry-run.sh \
+    || fail "falló la etapa: integration-dry-run"
 elif command -v sudo >/dev/null 2>&1; then
   root_lock="$(mktemp /tmp/hextunnel-component-lock.XXXXXX.env)"
   trap 'sudo rm -f "${root_lock:-}"; rm -rf "${DIST:-}"' EXIT
   sudo install -m 600 -o root -g root config/component-lock.env "$root_lock"
   sudo -E env HEXTUNNEL_COMPONENT_LOCK_FILE="$root_lock" \
-    bash tests/integration/test-dry-run.sh
+    bash tests/integration/test-dry-run.sh \
+    || fail "falló la etapa: integration-dry-run"
   sudo rm -f "$root_lock"
   root_lock=""
 else
   fail "test-dry-run requiere root o sudo"
 fi
 
+printf '\n=== GATE: reproducible-package ===\n'
 DIST="$(mktemp -d /tmp/hextunnel-release-gate.XXXXXX)"
 trap 'rm -rf "${DIST:-}"' EXIT
-SOURCE_DATE_EPOCH=1700000000 bash scripts/build-release.sh "$DIST"
+SOURCE_DATE_EPOCH=1700000000 bash scripts/build-release.sh "$DIST" \
+  || fail "no se pudo construir el paquete reproducible"
 ARCHIVE="$DIST/hextunnel-$VERSION.tar.gz"
 [[ -s "$ARCHIVE" && -s "$ARCHIVE.sha256" ]] || fail "no se generó el paquete de release"
 (
   cd "$DIST"
   sha256sum -c "$(basename "$ARCHIVE.sha256")"
-)
+) || fail "falló la verificación SHA-256 del paquete"
 archive_listing="$DIST/hextunnel-$VERSION.archive-list.txt"
 tar -tzf "$ARCHIVE" > "$archive_listing"
 grep -Fqx "hextunnel-$VERSION/RELEASE-MANIFEST.sha256" "$archive_listing" \
@@ -106,4 +123,4 @@ grep -Fqx "hextunnel-$VERSION/bin/hextunnel-private-upgrade" "$archive_listing" 
 grep -Fqx "hextunnel-$VERSION/bin/hextunnel-install-license-runtime" "$archive_listing" \
   || fail "el paquete no contiene el runtime de licencia"
 
-printf 'Production readiness: OK (%s)\n' "$VERSION"
+printf '\nProduction readiness: OK (%s)\n' "$VERSION"
