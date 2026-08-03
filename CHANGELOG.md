@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.0-rc.7 — 2026-08-03
+
+- Todas las operaciones `apt`, `apt-get` y `dpkg` del framework esperan de forma acotada a que finalicen `unattended-upgrades` u otras operaciones del gestor de paquetes.
+- APT recibe `DPkg::Lock::Timeout` y `APT::Update::Lock::Timeout` como segunda protección contra carreras entre procesos.
+- El instalador no elimina archivos lock ni termina procesos del sistema para forzar el acceso al gestor de paquetes.
+- Se añade una prueba de regresión con APT, DPKG y `unattended-upgr` simulados.
+- Las comprobaciones de release dejan de estar acopladas a un número `rc` escrito manualmente.
+
 ## 1.0.0-rc.6 — 2026-08-03
 
 - `load_runtime_config` ya no intenta recrear ni cambiar permisos de `/etc/hextunnel` cuando el directorio existe.
