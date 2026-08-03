@@ -15,6 +15,13 @@ fi
 exit 1
 EOF
 
+cat > "$TMP/mock-bin/ps" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${MOCK_PACKAGE_MANAGER_BUSY:-0}" == 1 ]]; then
+  printf '24846 00:03:12 S unattended-upgr /usr/bin/unattended-upgrade\n'
+fi
+EOF
+
 cat > "$TMP/mock-bin/apt-get" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" > "$MOCK_APT_LOG"
@@ -25,7 +32,11 @@ cat > "$TMP/mock-bin/dpkg" <<'EOF'
 printf '%s\n' "$*" > "$MOCK_DPKG_LOG"
 EOF
 
-chmod 700 "$TMP/mock-bin/pgrep" "$TMP/mock-bin/apt-get" "$TMP/mock-bin/dpkg"
+chmod 700 \
+  "$TMP/mock-bin/pgrep" \
+  "$TMP/mock-bin/ps" \
+  "$TMP/mock-bin/apt-get" \
+  "$TMP/mock-bin/dpkg"
 
 export PATH="$TMP/mock-bin:$PATH"
 export MOCK_APT_LOG="$TMP/apt.log"
@@ -34,14 +45,21 @@ export HEXTUNNEL_ROOT="$ROOT"
 export HEXTUNNEL_DRY_RUN=0
 export HEXTUNNEL_APT_LOCK_TIMEOUT=37
 export HEXTUNNEL_APT_LOCK_POLL_INTERVAL=1
+export HEXTUNNEL_APT_LOCK_HEARTBEAT=2
 
 # shellcheck disable=SC1091
 source "$ROOT/lib/common.sh"
 # shellcheck disable=SC1091
 source "$ROOT/lib/logging.sh"
+# shellcheck disable=SC1091
+source "$ROOT/lib/install-runtime.sh"
 
 export MOCK_PACKAGE_MANAGER_BUSY=1
 package_manager_busy
+snapshot="$(package_manager_process_snapshot)"
+grep -Fq 'pid=24846' <<< "$snapshot"
+grep -Fq 'command=unattended-upgr' <<< "$snapshot"
+
 export MOCK_PACKAGE_MANAGER_BUSY=0
 if package_manager_busy; then
   echo 'package manager was reported busy without a matching process' >&2
@@ -64,4 +82,21 @@ if (
   exit 1
 fi
 
-printf 'package manager lock handling: ok\n'
+if (
+  HEXTUNNEL_APT_LOCK_HEARTBEAT=invalid
+  package_manager_wait
+); then
+  echo 'invalid package manager heartbeat was accepted' >&2
+  exit 1
+fi
+
+HEXTUNNEL_REQUESTED_MODULES=(ssh xray)
+HEXTUNNEL_PROGRESS_CURRENT=0
+progress_output="$({
+  install_progress_begin_module ssh
+  install_progress_end_module ssh
+} 2>&1)"
+grep -Fq '[FASE 1/2 | 0%] Iniciando SSH + TLS.' <<< "$progress_output"
+grep -Fq '[FASE 1/2 | 50%] SSH + TLS completado' <<< "$progress_output"
+
+printf 'package manager lock handling and install progress: ok\n'
