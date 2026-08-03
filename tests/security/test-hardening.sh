@@ -100,9 +100,9 @@ grep -q 'bash "$PREFLIGHT"' bin/hextunnel-beta-install
 grep -q 'bash "$PREPARER".*beta' bin/hextunnel-beta-install
 grep -q 'bash "$FINALIZER"' bin/hextunnel-beta-install
 grep -q 'exec /usr/local/bin/menu' bin/hextunnel-beta-install
-grep -q '1.0.0-rc.5' docs/BETA.md
+grep -q '1.0.0-rc.6' docs/BETA.md
 
-grep -q '^1\.0\.0-rc\.5$' VERSION
+grep -q '^1\.0\.0-rc\.6$' VERSION
 grep -q 'debian:12|ubuntu:22.04|ubuntu:24.04' lib/validation.sh
 grep -q 'amd64|arm64' lib/validation.sh
 grep -q 'aarch64|arm64' lib/validation.sh
@@ -115,6 +115,9 @@ grep -q 'HEXTUNNEL_ZIVPN_ARM64_BINARY_URL' lib/architecture.sh
 grep -q 'HEXTUNNEL_ZIVPN_SHA256="${HEXTUNNEL_ZIVPN_ARM64_SHA256,,}"' lib/architecture.sh
 grep -q 'HEXTUNNEL_ZIVPN_AMD64_SHA256' scripts/resolve-component-lock.sh
 grep -q 'HEXTUNNEL_ZIVPN_ARM64_SHA256' scripts/resolve-component-lock.sh
+grep -Fq '[[ -d "$HEXTUNNEL_ETC" ]] || ensure_dir 700 "$HEXTUNNEL_ETC"' lib/common.sh
+grep -q 'test-runtime-config-readonly.sh' scripts/production-readiness.sh
+grep -q 'systemctl reset-failed' lib/rollback.sh
 grep -q 'operation_lock_acquire' lib/rollback.sh
 grep -q HEXTUNNEL_OPERATION_LOCK_FILE lib/common.sh
 grep -q /run/lock/hextunnel-operation.lock lib/common.sh
