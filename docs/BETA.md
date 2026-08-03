@@ -1,4 +1,4 @@
-# Hex Tunnel 1.0.0-rc.7 — prueba privada
+# Hex Tunnel 1.0.0-rc.8 — prueba privada
 
 Esta prueba valida en VPS reales la instalación comercial, activación permanente firmada, reseller, renovación, actualización privada y compatibilidad AMD64/ARM64 antes de declarar estable la distribución.
 
@@ -24,6 +24,7 @@ El perfil ARM64 instala SSH/TLS, Xray, Hysteria v1, Hysteria 2, ZiVPN, Webmin, m
 - Desde `1.0.0-rc.5`, ZiVPN usa URL y SHA-256 fijados por arquitectura para AMD64 y ARM64.
 - Desde `1.0.0-rc.6`, los servicios confinados pueden leer `/etc/hextunnel` sin intentar modificar permisos sobre un filesystem de solo lectura.
 - Desde `1.0.0-rc.7`, APT y DPKG esperan de forma segura a que terminen `unattended-upgrades` u otras operaciones del gestor de paquetes.
+- Desde `1.0.0-rc.8`, la espera APT muestra un latido periódico con PID, tiempo transcurrido y tiempo restante; cada módulo muestra fase, porcentaje y duración.
 - El instalador nunca borra archivos lock ni termina procesos de APT/DPKG para forzar el acceso.
 - El rollback elimina estados `failed/not-found` de unidades systemd creadas temporalmente.
 - Una instalación fallida puede reanudarse desde el mismo VPS mediante `/etc/hextunnel/activation.token`.
@@ -45,6 +46,14 @@ Con una key emitida por TeleBotGen:
 
 ```bash
 sudo bash -c 'command -v curl >/dev/null 2>&1 || { apt-get update -y && apt-get install -y curl ca-certificates; }; curl -fsSL https://ghostdeveloper.duckdns.org/install.sh -o /tmp/hextunnel-install.sh && chmod 700 /tmp/hextunnel-install.sh && exec /tmp/hextunnel-install.sh install'
+```
+
+Durante la instalación deben aparecer estados similares a:
+
+```text
+[FASE 1/6 | 0%] Iniciando SSH + TLS.
+[FASE 1/6 | 16%] SSH + TLS completado en 42s.
+APT/DPKG ocupado; esperando sin interrumpirlo. Transcurrido=30s restante<=1170s proceso=pid=...
 ```
 
 Después:
@@ -78,11 +87,11 @@ sudo chmod 700 /tmp/hextunnel-install.sh
 sudo /tmp/hextunnel-install.sh install
 ```
 
-Si APT está ocupado por `unattended-upgrades`, el instalador debe mostrar que está esperando y continuar automáticamente cuando el gestor quede libre. No se deben borrar `/var/lib/dpkg/lock*`, `/var/lib/apt/lists/lock` ni `/var/cache/apt/archives/lock`.
+Si APT está ocupado por `unattended-upgrades`, el instalador debe mostrar actualizaciones periódicas y continuar automáticamente cuando el gestor quede libre. No se deben borrar `/var/lib/dpkg/lock*`, `/var/lib/apt/lists/lock` ni `/var/cache/apt/archives/lock`.
 
 ## Actualización comercial
 
-Cuando `1.0.0-rc.7` sea la release activa:
+Cuando `1.0.0-rc.8` sea la release activa:
 
 ```bash
 sudo hextunnel-upgrade
