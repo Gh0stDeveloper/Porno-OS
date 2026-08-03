@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.0-rc.6 — 2026-08-03
+
+- `load_runtime_config` ya no intenta recrear ni cambiar permisos de `/etc/hextunnel` cuando el directorio existe.
+- Los servicios systemd con `ProtectSystem=full` o `ProtectSystem=strict` pueden cargar configuración sin fallar por filesystem de solo lectura.
+- Se añade una prueba de regresión específica para carga de configuración en runtime confinado.
+- El rollback omite unidades eliminadas, limpia estados `failed/not-found` y evita advertencias falsas de restauración.
+
 ## 1.0.0-rc.5 — 2026-08-03
 
 - La publicación fija por separado las URLs y los SHA-256 de ZiVPN para AMD64 y ARM64.
