@@ -94,7 +94,10 @@ validate_private_env_file() {
 }
 
 load_runtime_config() {
-  ensure_dir 700 "$HEXTUNNEL_ETC"
+  # Runtime services may run with ProtectSystem=full/strict. If the configuration
+  # directory already exists, loading configuration must remain a read-only
+  # operation and must not call install(1), chmod(2), or otherwise mutate /etc.
+  [[ -d "$HEXTUNNEL_ETC" ]] || ensure_dir 700 "$HEXTUNNEL_ETC"
   if [[ -f "$HEXTUNNEL_COMPONENT_LOCK_FILE" ]]; then
     validate_private_env_file "$HEXTUNNEL_COMPONENT_LOCK_FILE"
     # shellcheck disable=SC1090
