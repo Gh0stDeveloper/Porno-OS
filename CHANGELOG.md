@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.0-rc.8 — 2026-08-03
+
+- La espera de APT/DPKG muestra cada 15 segundos el proceso detectado, PID, estado, tiempo transcurrido y límite restante.
+- La instalación muestra fase, porcentaje y duración para cada módulo resuelto.
+- El runtime visible se mantiene separado del núcleo común para no alterar servicios que cargan configuración en modo de solo lectura.
+- Se amplía la prueba de regresión del gestor de paquetes para cubrir el diagnóstico del proceso y la salida de progreso.
+- La mejora toma como referencia la interfaz del fuente `hex-auto-optimizado.sh`, sin copiar prácticas inseguras como borrar locks, usar permisos `777`, sustituir `resolv.conf` o instalar componentes sin checksum.
+
 ## 1.0.0-rc.7 — 2026-08-03
 
 - Todas las operaciones `apt`, `apt-get` y `dpkg` del framework esperan de forma acotada a que finalicen `unattended-upgrades` u otras operaciones del gestor de paquetes.
@@ -80,4 +88,6 @@
 
 ## Unreleased
 
+- Caché persistente verificada de artefactos y predescargas paralelas pendientes de integración por componente.
+- Ampliación formal de la matriz a Debian 11/Ubuntu 20.04 y arquitecturas ARM32/i386 pendiente de pruebas reales.
 - Validación integral pendiente en VPS AMD64 y ARM64 limpias antes de declarar la release estable.
