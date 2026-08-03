@@ -97,8 +97,8 @@ restore_transaction_services() {
     else
       systemctl stop "$service" >/dev/null 2>&1 || true
     fi
+    systemctl reset-failed "$service" >/dev/null 2>&1 || true
   done < "$dir/services.manifest"
-  systemctl reset-failed >/dev/null 2>&1 || true
 }
 
 restore_created_users() {
