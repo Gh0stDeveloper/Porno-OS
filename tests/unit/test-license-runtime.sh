@@ -153,5 +153,5 @@ runtime_line="$(grep -nF 'hextunnel-install-license-runtime' "$upgrade" | tail -
 
 # El estado simulado anterior permanece en rc.4 para comprobar compatibilidad,
 # pero la fuente que se publica en este gate debe ser la release actual.
-[[ "$(tr -d '\r\n' < "$ROOT/VERSION")" == '1.0.0-rc.5' ]]
+[[ "$(tr -d '\r\n' < "$ROOT/VERSION")" == '1.0.0-rc.6' ]]
 echo 'permanent activation runtime: ok'
