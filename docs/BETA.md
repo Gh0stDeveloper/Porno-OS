@@ -1,4 +1,4 @@
-# Hex Tunnel 1.0.0-rc.4 — prueba privada
+# Hex Tunnel 1.0.0-rc.5 — prueba privada
 
 Esta prueba valida en VPS reales la instalación comercial, activación permanente firmada, reseller, renovación, actualización privada y compatibilidad AMD64/ARM64 antes de declarar estable la distribución.
 
@@ -21,6 +21,8 @@ El perfil ARM64 instala SSH/TLS, Xray, Hysteria v1, Hysteria 2, ZiVPN, Webmin, m
 - `hextunnel-license` muestra activación permanente, reseller y lease firmado.
 - `hextunnel-upgrade` utiliza el token de activación local; no requiere ni conserva la key original.
 - Desde `1.0.0-rc.4`, el vencimiento informativo de la key no detiene una instalación activada.
+- Desde `1.0.0-rc.5`, ZiVPN usa URL y SHA-256 fijados por arquitectura para AMD64 y ARM64.
+- Una instalación fallida puede reanudarse desde el mismo VPS mediante `/etc/hextunnel/activation.token`.
 - La actualización renueva correctamente el menú AMD64 o ARM64.
 - `beta-install.sh` queda reservado para pruebas por commit exacto.
 
@@ -61,9 +63,20 @@ Reseller: <nombre firmado>
 
 El archivo `/etc/hextunnel/license.key` no debe existir después de una activación correcta.
 
+## Recuperación de una instalación fallida
+
+Si una transacción falla después de activar la key, no debe emitirse una key nueva ni eliminarse el token local. Descarga otra vez el instalador público y ejecuta `install`; el bootstrap debe detectar `/etc/hextunnel/activation.token`, solicitar autorización mediante el token y reanudar la instalación en la misma IP.
+
+```bash
+sudo test -s /etc/hextunnel/activation.token
+sudo curl -fsSL https://ghostdeveloper.duckdns.org/install.sh -o /tmp/hextunnel-install.sh
+sudo chmod 700 /tmp/hextunnel-install.sh
+sudo /tmp/hextunnel-install.sh install
+```
+
 ## Actualización comercial
 
-Cuando `1.0.0-rc.4` sea la release activa:
+Cuando `1.0.0-rc.5` sea la release activa:
 
 ```bash
 sudo hextunnel-upgrade
