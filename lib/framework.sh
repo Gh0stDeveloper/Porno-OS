@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
 
+if [[ -r "$HEXTUNNEL_ROOT/lib/install-runtime.sh" ]]; then
+  # shellcheck disable=SC1091
+  source "$HEXTUNNEL_ROOT/lib/install-runtime.sh"
+else
+  die "Falta el runtime de instalación: $HEXTUNNEL_ROOT/lib/install-runtime.sh"
+fi
+
 install_framework() {
   local source_root="$HEXTUNNEL_ROOT"
   ensure_dir 755 /usr/local/bin
