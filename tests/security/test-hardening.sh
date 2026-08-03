@@ -40,7 +40,7 @@ if grep -RIE 'raw\.githubusercontent\.com/.*/main/' modules config; then
   exit 1
 fi
 
-component_override_pattern='^[[:space:]]*HEXTUNNEL_(UDP_CUSTOM_(REF|BINARY_URL|SHA256)|BADVPN_(REF|SOURCE_URL|SHA256)|SLOWDNS_(REF|BINARY_URL|SHA256)|SINGBOX_(VERSION|BINARY_URL|SHA256)|ZIVPN_(VERSION|BINARY_URL|SHA256))=""'
+component_override_pattern='^[[:space:]]*HEXTUNNEL_(UDP_CUSTOM_(REF|BINARY_URL|SHA256)|BADVPN_(REF|SOURCE_URL|SHA256)|SLOWDNS_(REF|BINARY_URL|SHA256)|SINGBOX_(VERSION|BINARY_URL|SHA256)|ZIVPN_(VERSION|BINARY_URL|SHA256|AMD64_(BINARY_URL|SHA256)|ARM64_(BINARY_URL|SHA256)))=""'
 if grep -Eq "$component_override_pattern" config/hextunnel.env.example; then
   echo 'empty component overrides must not erase release lock values' >&2
   exit 1
@@ -100,9 +100,9 @@ grep -q 'bash "$PREFLIGHT"' bin/hextunnel-beta-install
 grep -q 'bash "$PREPARER".*beta' bin/hextunnel-beta-install
 grep -q 'bash "$FINALIZER"' bin/hextunnel-beta-install
 grep -q 'exec /usr/local/bin/menu' bin/hextunnel-beta-install
-grep -q '1.0.0-rc.4' docs/BETA.md
+grep -q '1.0.0-rc.5' docs/BETA.md
 
-grep -q '^1\.0\.0-rc\.4$' VERSION
+grep -q '^1\.0\.0-rc\.5$' VERSION
 grep -q 'debian:12|ubuntu:22.04|ubuntu:24.04' lib/validation.sh
 grep -q 'amd64|arm64' lib/validation.sh
 grep -q 'aarch64|arm64' lib/validation.sh
@@ -110,7 +110,11 @@ grep -q 'udp_custom_supported_architectures.*amd64' lib/architecture.sh
 grep -q 'slowdns_supported_architectures.*amd64' lib/architecture.sh
 grep -q 'legacy_all_supported_architectures.*amd64' lib/architecture.sh
 grep -q 'unset HEXTUNNEL_SINGBOX_SHA256' lib/architecture.sh
-grep -q 'unset HEXTUNNEL_ZIVPN_SHA256' lib/architecture.sh
+grep -q 'HEXTUNNEL_ZIVPN_ARM64_SHA256' lib/architecture.sh
+grep -q 'HEXTUNNEL_ZIVPN_ARM64_BINARY_URL' lib/architecture.sh
+grep -q 'HEXTUNNEL_ZIVPN_SHA256="${HEXTUNNEL_ZIVPN_ARM64_SHA256,,}"' lib/architecture.sh
+grep -q 'HEXTUNNEL_ZIVPN_AMD64_SHA256' scripts/resolve-component-lock.sh
+grep -q 'HEXTUNNEL_ZIVPN_ARM64_SHA256' scripts/resolve-component-lock.sh
 grep -q 'operation_lock_acquire' lib/rollback.sh
 grep -q HEXTUNNEL_OPERATION_LOCK_FILE lib/common.sh
 grep -q /run/lock/hextunnel-operation.lock lib/common.sh
