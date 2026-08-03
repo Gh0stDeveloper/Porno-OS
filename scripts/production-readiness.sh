@@ -29,6 +29,7 @@ required=(
   bin/hextunnel-private-install bin/hextunnel-private-upgrade bin/hextunnel-beta-install
   bin/hextunnel-license bin/hextunnel-install-license-runtime
   bin/hextunnel-install-locked-component bin/hextunnel-slipstream-compat
+  lib/install-runtime.sh
   docs/ARCHITECTURE.md docs/BETA.md docs/OPERATIONS.md docs/RECOVERY.md docs/PRIVATE_DISTRIBUTION.md
   scripts/build-release.sh scripts/resolve-component-lock.sh scripts/prepare-legacy-runtime.sh
   tests/unit/test-runtime-config-readonly.sh tests/unit/test-package-manager-lock.sh
