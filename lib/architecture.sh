@@ -83,15 +83,20 @@ prepare_module_architecture_environment() {
   architecture="$(hextunnel_current_architecture)" || return 1
   [[ "$architecture" == arm64 ]] || return 0
 
-  # The release component lock is generated on amd64. These two modules query
-  # the exact ARM64 release asset and verify GitHub's SHA-256 digest at runtime;
-  # retaining the amd64 checksum would correctly reject the ARM64 binary.
   case "$module" in
     hysteria)
+      # Sing-box publica digest para ARM64 y el módulo lo verifica al resolver
+      # el activo exacto. El checksum genérico del lock corresponde a AMD64.
       unset HEXTUNNEL_SINGBOX_SHA256
       ;;
     zivpn)
-      unset HEXTUNNEL_ZIVPN_SHA256
+      [[ "${HEXTUNNEL_ZIVPN_ARM64_SHA256:-}" =~ ^[0-9a-fA-F]{64}$ ]] \
+        || die "La release no contiene el SHA-256 ARM64 fijado para ZiVPN."
+      [[ -n "${HEXTUNNEL_ZIVPN_ARM64_BINARY_URL:-}" ]] \
+        || die "La release no contiene la URL ARM64 fijada para ZiVPN."
+      HEXTUNNEL_ZIVPN_SHA256="${HEXTUNNEL_ZIVPN_ARM64_SHA256,,}"
+      HEXTUNNEL_ZIVPN_BINARY_URL="$HEXTUNNEL_ZIVPN_ARM64_BINARY_URL"
+      export HEXTUNNEL_ZIVPN_SHA256 HEXTUNNEL_ZIVPN_BINARY_URL
       ;;
   esac
 }
