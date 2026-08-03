@@ -28,7 +28,7 @@ load_module_registry() {
   done
   if [[ -r "$HEXTUNNEL_ROOT/lib/architecture.sh" ]]; then
     # Loaded after modules so architecture contracts can override or extend them.
-    # shellcheck disable=SC1090
+    # shellcheck disable=SC1091
     source "$HEXTUNNEL_ROOT/lib/architecture.sh"
   fi
 }
@@ -101,6 +101,10 @@ module_is_installed() {
 
 module_install() {
   local module="$1"
+
+  if declare -F install_progress_begin_module >/dev/null 2>&1; then
+    install_progress_begin_module "$module"
+  fi
   log_info "Instalando módulo: $module"
 
   if declare -F prepare_module_architecture_environment >/dev/null 2>&1; then
@@ -121,6 +125,9 @@ module_install() {
   module_validate "$module"
   module_mark_installed "$module"
   log_success "Módulo instalado: $module"
+  if declare -F install_progress_end_module >/dev/null 2>&1; then
+    install_progress_end_module "$module"
+  fi
 }
 
 module_uninstall() {
