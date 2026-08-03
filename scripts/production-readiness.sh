@@ -37,9 +37,14 @@ if [[ "${HEXTUNNEL_RELEASE_BUILD:-0}" == 1 ]]; then
     || fail "component-lock.env es incompatible"
   for variable in \
     HEXTUNNEL_UDP_CUSTOM_SHA256 HEXTUNNEL_SLOWDNS_SHA256 HEXTUNNEL_BADVPN_SHA256 \
-    HEXTUNNEL_SINGBOX_SHA256 HEXTUNNEL_ZIVPN_SHA256; do
+    HEXTUNNEL_SINGBOX_SHA256 HEXTUNNEL_ZIVPN_SHA256 \
+    HEXTUNNEL_ZIVPN_AMD64_SHA256 HEXTUNNEL_ZIVPN_ARM64_SHA256; do
     grep -Eq "^${variable}=.*[0-9a-f]{64}" config/component-lock.env \
       || fail "falta SHA-256 bloqueado para $variable"
+  done
+  for variable in HEXTUNNEL_ZIVPN_AMD64_BINARY_URL HEXTUNNEL_ZIVPN_ARM64_BINARY_URL; do
+    grep -Eq "^${variable}=.+" config/component-lock.env \
+      || fail "falta URL bloqueada para $variable"
   done
 fi
 
