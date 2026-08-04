@@ -29,7 +29,7 @@ required=(
   bin/hextunnel-private-install bin/hextunnel-private-upgrade bin/hextunnel-beta-install
   bin/hextunnel-license bin/hextunnel-install-license-runtime
   bin/hextunnel-install-locked-component bin/hextunnel-slipstream-compat
-  lib/install-runtime.sh lib/network-policy.sh
+  lib/install-runtime.sh lib/install-runtime-guards.sh lib/network-policy.sh
   docs/ARCHITECTURE.md docs/BETA.md docs/OPERATIONS.md docs/RECOVERY.md docs/PRIVATE_DISTRIBUTION.md
   scripts/build-release.sh scripts/resolve-component-lock.sh scripts/prepare-legacy-runtime.sh
   tests/unit/test-runtime-config-readonly.sh tests/unit/test-package-manager-lock.sh
@@ -128,6 +128,8 @@ grep -Fqx "hextunnel-$VERSION/bin/hextunnel-private-upgrade" "$archive_listing" 
   || fail "el paquete no contiene el actualizador privado"
 grep -Fqx "hextunnel-$VERSION/bin/hextunnel-install-license-runtime" "$archive_listing" \
   || fail "el paquete no contiene el runtime de licencia"
+grep -Fqx "hextunnel-$VERSION/lib/install-runtime-guards.sh" "$archive_listing" \
+  || fail "el paquete no contiene las guardas del runtime"
 grep -Fqx "hextunnel-$VERSION/lib/network-policy.sh" "$archive_listing" \
   || fail "el paquete no contiene la política de red"
 
