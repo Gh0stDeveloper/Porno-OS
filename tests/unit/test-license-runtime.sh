@@ -135,8 +135,15 @@ grep -Fq 'Activación: permanente' "$runtime_installer"
 grep -Fq 'hextunnel-license reseller' "$runtime_installer"
 grep -Fq '@Gh0stDeveloper' "$runtime_installer"
 grep -Fq '@Jotchua_DevzZ' "$runtime_installer"
-grep -Fq 'Activación: permanente' "$ROOT/bin/hextunnel-arm64-menu"
-grep -Fq 'hextunnel-license reseller' "$ROOT/bin/hextunnel-arm64-menu"
+
+optimized_menu="$ROOT/bin/hextunnel-arm64-menu"
+# El panel optimizado inserta códigos de color entre la etiqueta y el valor.
+# Validamos los elementos semánticos y la consulta dinámica al runtime, no una
+# cadena literal acoplada al formato visual del menú anterior.
+grep -Fq 'ACTIVACIÓN:' "$optimized_menu"
+grep -Fq 'permanente' "$optimized_menu"
+grep -Fq 'hextunnel-license reseller' "$optimized_menu"
+grep -Fq 'Estado de licencia' "$optimized_menu"
 
 upgrade="$ROOT/bin/hextunnel-private-upgrade"
 grep -Fq 'transaction_begin licensed-framework-upgrade' "$upgrade"
