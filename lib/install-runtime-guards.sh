@@ -16,6 +16,40 @@ package_manager_lock_paths() {
     /var/lib/apt/daily_lock
 }
 
+package_manager_prepare_tmp() {
+  local tmp_dir="${HEXTUNNEL_TMP_DIR:-/tmp}" mode owner group repaired=0
+
+  if [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]]; then
+    return 0
+  fi
+
+  if [[ ! -d "$tmp_dir" ]]; then
+    install -d -m 1777 "$tmp_dir"
+    repaired=1
+  fi
+
+  mode="$(stat -c '%a' "$tmp_dir" 2>/dev/null || printf unknown)"
+  if [[ "$mode" != 1777 ]]; then
+    chmod 1777 "$tmp_dir" || die "No se pudieron restaurar los permisos 1777 de $tmp_dir."
+    repaired=1
+  fi
+
+  if [[ "$tmp_dir" == /tmp ]]; then
+    owner="$(stat -c '%U' "$tmp_dir" 2>/dev/null || printf unknown)"
+    group="$(stat -c '%G' "$tmp_dir" 2>/dev/null || printf unknown)"
+    if [[ "$owner" != root || "$group" != root ]]; then
+      chown root:root "$tmp_dir" || die "No se pudo restaurar root:root en /tmp."
+      repaired=1
+    fi
+  fi
+
+  [[ -w "$tmp_dir" ]] || die "El directorio temporal $tmp_dir no permite escritura."
+
+  if ((repaired == 1)); then
+    log_warn "Se restauró $tmp_dir con permisos compartidos 1777 para APT/DPKG."
+  fi
+}
+
 package_manager_lock_pids() {
   local path raw pid
 
@@ -51,6 +85,7 @@ package_manager_lock_pids() {
 }
 
 package_manager_busy() {
+  package_manager_prepare_tmp
   [[ -n "$(package_manager_lock_pids | sort -u)" ]]
 }
 
@@ -69,6 +104,24 @@ package_manager_process_snapshot() {
       printf "\n"
     }
   '
+}
+
+# Preserve permissions of existing shared directories such as /tmp. Some
+# components, notably ZiVPN, use a temporary file directly below /tmp; applying
+# install -d -m 700 to its parent would incorrectly change /tmp from 1777 to 700.
+artifact_prefetch_materialize_url() {
+  local url="$1" destination="$2" key path parent
+  key="${HEXTUNNEL_PREFETCH_URL_KEYS[$url]:-}"
+  [[ -n "$key" ]] || return 1
+  artifact_prefetch_wait_key "$key" || return 1
+  artifact_cache_validate "$key" || return 1
+  path="$(artifact_cache_key_path "$key")"
+  parent="$(dirname "$destination")"
+  if [[ ! -d "$parent" ]]; then
+    install -d -m 700 "$parent"
+  fi
+  cp -f "$path" "$destination"
+  log_success "Artefacto reutilizado desde caché verificada: $key"
 }
 
 # Override the runtime helper so non-SSH contexts (CI, console and dry-run)
