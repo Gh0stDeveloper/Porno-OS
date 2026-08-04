@@ -1,4 +1,4 @@
-# Hex Tunnel 1.0.0-rc.14 — prueba privada
+# Hex Tunnel 1.0.0-rc.15 — prueba privada
 
 Esta prueba valida instalación comercial, activación permanente, reseller, renovación, actualización privada, menú administrativo y compatibilidad AMD64/ARM64 antes de declarar estable la distribución.
 
@@ -27,6 +27,10 @@ El perfil ARM64 instala SSH/TLS, Xray, Hysteria v1, Hysteria 2, ZiVPN, Webmin, m
 - `rc.13`: `hextunnel-account show` entrega credenciales y enlaces para SSH, VLESS, VMESS, Trojan, Hysteria, Hysteria 2 y ZiVPN.
 - `rc.13`: crear o eliminar cuentas Xray valida siempre un temporal con sufijo `.json`.
 - `rc.14`: la actualización privada recupera automáticamente el permiso ejecutable del actualizador empaquetado y el publicador comercial verifica los modos dentro del TAR.GZ.
+- `rc.15`: las credenciales usan la IPv4 pública firmada o detectada y rechazan direcciones privadas de VPC como `10.0.0.0/8`.
+- `rc.15`: el administrador puede introducir y confirmar una contraseña SSH visible al crear la cuenta.
+- `rc.15`: la entrega SSH muestra un bloque legible y conexiones compactas `HOST:PUERTO@USUARIO:CONTRASEÑA`.
+- `rc.15`: la creación SSH comprueba las reglas locales de los puertos administrados dentro de la misma transacción y restaura el firewall si falla.
 
 El instalador nunca elimina archivos lock ni termina procesos de APT/DPKG para forzar acceso. El rollback cancela descargas anticipadas, apaga servicios nuevos, restaura firewall, archivos administrados, estados originales y el estado runtime previo de IPv6.
 
@@ -90,7 +94,7 @@ Después de actualizar, `sudo menu` debe mostrar como mínimo:
 
 Cada protocolo debe incluir crear, renovar, eliminar, listar, mostrar credenciales/enlaces, suspender y reactivar. La opción de cuentas no debe imprimir solamente la ayuda de `hextunnel-account`.
 
-Prueba mínima:
+Prueba mínima Xray:
 
 ```bash
 sudo hextunnel-account create vless prueba-menu "$(date -d '+1 day' +%Y-%m-%d)"
@@ -99,6 +103,33 @@ sudo hextunnel-account delete vless prueba-menu
 ```
 
 La creación y eliminación deben validar Xray con una ruta temporal terminada en `.json`.
+
+## Prueba de cuenta SSH
+
+Desde el menú, crear una cuenta SSH e introducir una contraseña visible dos veces. La entrega debe mostrar una IPv4 pública; no se aceptan direcciones privadas como `10.0.0.121`.
+
+Formato mínimo esperado:
+
+```text
+Usuario:             test
+Protocolo:           ssh
+Estado:              active
+IPv4 pública:        149.130.209.224
+Contraseña:          contraseña-elegida
+Puertos SSH:         22, 299
+TLS/SSL:             443, 4443
+WebSocket:           25, 2082, 2086, 10080
+SSH:                 149.130.209.224:22@test:contraseña-elegida
+SSH alternativo:     149.130.209.224:299@test:contraseña-elegida
+```
+
+Comprobar que los listeners existen localmente:
+
+```bash
+sudo ss -lntup | grep -E ':(22|299|443|4443|25|2082|2086|10080)\b'
+```
+
+En proveedores con firewall externo, como Oracle Cloud, también se deben permitir los puertos correspondientes en la Security List o NSG. Hex Tunnel solo administra el firewall del sistema operativo.
 
 ## Recuperación
 
@@ -117,7 +148,7 @@ Los artefactos verificados permanecen en `/var/cache/hextunnel/artifacts` durant
 
 ## Actualización comercial
 
-Cuando `1.0.0-rc.14` sea la release activa:
+Cuando `1.0.0-rc.15` sea la release activa:
 
 ```bash
 sudo hextunnel-upgrade
@@ -167,6 +198,7 @@ Comprobar:
 - Stunnel, SSLH, Fail2ban y HAProxy activos cuando correspondan.
 - Cuentas con creación, suspensión, renovación, expiración y eliminación.
 - Credenciales y enlaces disponibles mediante el menú y `hextunnel-account show`.
+- Las credenciales muestran la IPv4 pública y nunca una IP privada de VPC.
 - Renovación del lease y actualización sin perder configuración.
 
 ## Reinicio
