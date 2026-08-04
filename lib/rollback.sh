@@ -145,6 +145,9 @@ rollback_transaction() {
 
   log_warn "Restaurando transacción: $(basename "$dir")"
   restore_transaction_files "$dir"
+  if declare -F restore_ipv6_runtime_state >/dev/null 2>&1; then
+    restore_ipv6_runtime_state "$dir"
+  fi
   firewall_restore "$dir"
   restore_transaction_services "$dir"
   restore_created_users "$dir"
@@ -164,6 +167,9 @@ transaction_fail() {
   HEXTUNNEL_TRANSACTION_FAILING=1
   export HEXTUNNEL_TRANSACTION_FAILING
 
+  if declare -F artifact_prefetch_cancel_all >/dev/null 2>&1; then
+    artifact_prefetch_cancel_all
+  fi
   log_error "Falló la transacción en línea $line: $command (código $code)"
   if [[ -n "${HEXTUNNEL_TRANSACTION_DIR:-}" && "${HEXTUNNEL_DRY_RUN:-0}" != 1 ]]; then
     printf '%s\n' FAILED > "$HEXTUNNEL_TRANSACTION_DIR/status"
@@ -176,6 +182,9 @@ transaction_fail() {
 
 transaction_commit() {
   [[ -n "${HEXTUNNEL_TRANSACTION_DIR:-}" ]] || return 0
+  if declare -F artifact_prefetch_cancel_all >/dev/null 2>&1; then
+    artifact_prefetch_cancel_all
+  fi
   if [[ "${HEXTUNNEL_DRY_RUN:-0}" != 1 ]]; then
     local status
     status="$(transaction_status "$HEXTUNNEL_TRANSACTION_DIR")"
