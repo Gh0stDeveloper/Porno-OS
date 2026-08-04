@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.0-rc.14 — 2026-08-04
+
+- La actualización privada distingue entre un archivo ausente y un archivo presente sin bit ejecutable.
+- `hextunnel-private-install` exige que el actualizador sea un archivo regular legible, restaura su modo `0700` y lo ejecuta mediante Bash.
+- Se añade una prueba funcional que reproduce un actualizador empaquetado como `0600` y confirma su ejecución y reparación a `0700`.
+- El publicador de GhostDeveloperLicenseServer normaliza los modos del staging comercial y verifica los permisos ejecutables dentro del TAR.GZ antes de registrar la release.
+- `rc.13` permanece funcional para instalaciones nuevas, pero su paquete comercial no puede actualizar instalaciones existentes debido al modo perdido de `bin/hextunnel-private-upgrade`.
+
 ## 1.0.0-rc.13 — 2026-08-04
 
 - El menú ARM64 adopta la estructura visual y funcional de `hex-auto-optimizado.sh`.
