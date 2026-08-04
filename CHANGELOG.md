@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.0-rc.13 — 2026-08-04
+
+- El menú ARM64 adopta la estructura visual y funcional de `hex-auto-optimizado.sh`.
+- Se añaden submenús para SSH, VLESS, VMESS, Trojan, Hysteria v1, Hysteria 2 y ZiVPN.
+- Las cuentas pueden crearse, renovarse, eliminarse, listarse, suspenderse, reactivarse y consultarse sin abandonar el panel.
+- El panel incluye conexiones activas, control de servicios, respaldos, utilidades, configuración avanzada, licencia y actualización.
+- `hextunnel-account show` muestra credenciales y genera enlaces de cliente para los protocolos compatibles.
+- Las operaciones de cuentas Xray validan archivos temporales con sufijo `.json`, evitando el error de detección de formato de Xray.
+- El gate de producción comprueba la presencia del menú, sus submenús, el comando `show` y las guardas de cuentas Xray.
+
 ## 1.0.0-rc.12 — 2026-08-04
 
 - La política IPv4-only valida Xray usando un archivo temporal con sufijo `.json`, permitiendo que Xray detecte correctamente el formato.
@@ -48,7 +58,7 @@
 ## 1.0.0-rc.7 — 2026-08-03
 
 - Todas las operaciones `apt`, `apt-get` y `dpkg` del framework esperan de forma acotada a que finalicen `unattended-upgrades` u otras operaciones del gestor de paquetes.
-- APT recibe `DPkg::Lock::Timeout` y `APT::Update::Lock::Timeout` como segunda protección contra carreras entre procesos.
+- APT recibe `DPkg::Lock::Timeout` y `APT::Update::Lock::Timeout` como segunda protección contra carreras entre la comprobación y la ejecución.
 - El instalador no elimina archivos lock ni termina procesos del sistema para forzar el acceso al gestor de paquetes.
 - Se añade una prueba de regresión con APT, DPKG y `unattended-upgr` simulados.
 - Las comprobaciones de release dejan de estar acopladas a un número `rc` escrito manualmente.
