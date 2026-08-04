@@ -1,6 +1,6 @@
-# Hex Tunnel 1.0.0-rc.12 — prueba privada
+# Hex Tunnel 1.0.0-rc.13 — prueba privada
 
-Esta prueba valida instalación comercial, activación permanente, reseller, renovación, actualización privada y compatibilidad AMD64/ARM64 antes de declarar estable la distribución.
+Esta prueba valida instalación comercial, activación permanente, reseller, renovación, actualización privada, menú administrativo y compatibilidad AMD64/ARM64 antes de declarar estable la distribución.
 
 ## Plataformas validadas
 
@@ -23,6 +23,9 @@ El perfil ARM64 instala SSH/TLS, Xray, Hysteria v1, Hysteria 2, ZiVPN, Webmin, m
 - `rc.10`: detección real de locks APT/DPKG, preservación de `/tmp` y reparación automática de su modo `1777`.
 - `rc.11`: el rollback apaga servicios creados durante una transacción antes de retirar sus unidades; el siguiente preflight limpia residuos de la última transacción revertida.
 - `rc.12`: Xray, Hysteria v1 y ZiVPN conservan una extensión JSON explícita durante la validación temporal de la política IPv4-only.
+- `rc.13`: el menú ARM64 adopta la navegación de `hex-auto-optimizado.sh`, con submenús de cuentas, conexiones, servicios, respaldos, utilidades y configuración avanzada.
+- `rc.13`: `hextunnel-account show` entrega credenciales y enlaces para SSH, VLESS, VMESS, Trojan, Hysteria, Hysteria 2 y ZiVPN.
+- `rc.13`: crear o eliminar cuentas Xray valida siempre un temporal con sufijo `.json`.
 
 El instalador nunca elimina archivos lock ni termina procesos de APT/DPKG para forzar acceso. El rollback cancela descargas anticipadas, apaga servicios nuevos, restaura firewall, archivos administrados, estados originales y el estado runtime previo de IPv6.
 
@@ -67,6 +70,35 @@ Failed to get format of /tmp/hextunnel-xray-ipv4.*
 
 Si la sesión SSH activa usa IPv6, la política se omite para no cortar el acceso.
 
+## Menú administrativo
+
+Después de actualizar, `sudo menu` debe mostrar como mínimo:
+
+```text
+01 Cuentas SSH
+02 Cuentas Xray
+03 Cuentas Hysteria
+04 Cuentas Hysteria 2
+05 Cuentas ZiVPN
+06 Conexiones activas
+07 Control de servicios
+08 Backup y restaurar
+09 Utilidades
+10 Configuración avanzada
+```
+
+Cada protocolo debe incluir crear, renovar, eliminar, listar, mostrar credenciales/enlaces, suspender y reactivar. La opción de cuentas no debe imprimir solamente la ayuda de `hextunnel-account`.
+
+Prueba mínima:
+
+```bash
+sudo hextunnel-account create vless prueba-menu "$(date -d '+1 day' +%Y-%m-%d)"
+sudo hextunnel-account show vless prueba-menu
+sudo hextunnel-account delete vless prueba-menu
+```
+
+La creación y eliminación deben validar Xray con una ruta temporal terminada en `.json`.
+
 ## Recuperación
 
 Una instalación fallida puede reanudarse desde la misma VPS sin emitir otra key:
@@ -84,7 +116,7 @@ Los artefactos verificados permanecen en `/var/cache/hextunnel/artifacts` durant
 
 ## Actualización comercial
 
-Cuando `1.0.0-rc.12` sea la release activa:
+Cuando `1.0.0-rc.13` sea la release activa:
 
 ```bash
 sudo hextunnel-upgrade
@@ -119,6 +151,7 @@ Comprobar:
 - Listeners públicos en IPv4 cuando `HEXTUNNEL_DISABLE_IPV6=1`.
 - Stunnel, SSLH, Fail2ban y HAProxy activos cuando correspondan.
 - Cuentas con creación, suspensión, renovación, expiración y eliminación.
+- Credenciales y enlaces disponibles mediante el menú y `hextunnel-account show`.
 - Renovación del lease y actualización sin perder configuración.
 
 ## Reinicio
