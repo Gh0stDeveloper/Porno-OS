@@ -29,10 +29,11 @@ required=(
   bin/hextunnel-private-install bin/hextunnel-private-upgrade bin/hextunnel-beta-install
   bin/hextunnel-license bin/hextunnel-install-license-runtime
   bin/hextunnel-install-locked-component bin/hextunnel-slipstream-compat
-  lib/install-runtime.sh
+  lib/install-runtime.sh lib/network-policy.sh
   docs/ARCHITECTURE.md docs/BETA.md docs/OPERATIONS.md docs/RECOVERY.md docs/PRIVATE_DISTRIBUTION.md
   scripts/build-release.sh scripts/resolve-component-lock.sh scripts/prepare-legacy-runtime.sh
   tests/unit/test-runtime-config-readonly.sh tests/unit/test-package-manager-lock.sh
+  tests/unit/test-install-runtime-network.sh
   SECURITY.md CHANGELOG.md VERSION
 )
 for path in "${required[@]}"; do
@@ -78,6 +79,7 @@ run_step current-tree bash tests/security/test-current-tree.sh
 run_step core bash tests/unit/test-core.sh
 run_step runtime-config-readonly bash tests/unit/test-runtime-config-readonly.sh
 run_step package-manager-lock bash tests/unit/test-package-manager-lock.sh
+run_step install-runtime-network bash tests/unit/test-install-runtime-network.sh
 run_step module-contract bash tests/unit/test-module-contract.sh
 run_step production-operations bash tests/unit/test-production-operations.sh
 run_step license-runtime bash tests/unit/test-license-runtime.sh
@@ -126,5 +128,7 @@ grep -Fqx "hextunnel-$VERSION/bin/hextunnel-private-upgrade" "$archive_listing" 
   || fail "el paquete no contiene el actualizador privado"
 grep -Fqx "hextunnel-$VERSION/bin/hextunnel-install-license-runtime" "$archive_listing" \
   || fail "el paquete no contiene el runtime de licencia"
+grep -Fqx "hextunnel-$VERSION/lib/network-policy.sh" "$archive_listing" \
+  || fail "el paquete no contiene la política de red"
 
 printf '\nProduction readiness: OK (%s)\n' "$VERSION"
