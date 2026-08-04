@@ -32,10 +32,30 @@ grep -Fq 'hextunnel-account show <protocolo> <usuario>' "$ACCOUNT"
 grep -Fq 'source "$ROOT/lib/account-runtime-guards.sh"' "$ACCOUNT"
 grep -Fq 'source "$ROOT/lib/account-display.sh"' "$ACCOUNT"
 
+grep -Fq 'Contraseña SSH (visible):' "$ROOT/lib/account-runtime-guards.sh"
+grep -Fq 'HEXTUNNEL_ACCOUNT_SECRET' "$ROOT/lib/account-runtime-guards.sh"
+grep -Fq 'account_ensure_ssh_ingress' "$ROOT/lib/account-runtime-guards.sh"
+grep -Fq 'firewall_open_port tcp "$port" 0.0.0.0/0' "$ROOT/lib/account-runtime-guards.sh"
+grep -Fq "account_display_compact 'SSH'" "$ROOT/lib/account-display.sh"
+grep -Fq 'HEXTUNNEL_PUBLIC_IPV4' "$ROOT/lib/account-display.sh"
+grep -Fq 'HEXTUNNEL_LICENSE_SUBJECT' "$ROOT/lib/account-display.sh"
+grep -Fq 'Security List o NSG' "$ROOT/lib/account-display.sh"
+
 # shellcheck disable=SC1091
 source "$ROOT/lib/account-runtime-guards.sh"
 tmp="$(account_xray_temp_file)"
 [[ "$tmp" == *.json ]]
 rm -f "$tmp"
 
-printf 'optimized administration menu parity: ok\n'
+secret="$(HEXTUNNEL_ACCOUNT_SECRET='ClaveSegura-2026' account_read_ssh_password)"
+[[ "$secret" == 'ClaveSegura-2026' ]]
+
+# shellcheck disable=SC1091
+source "$ROOT/lib/account-display.sh"
+account_is_public_ipv4 149.130.209.224
+! account_is_public_ipv4 10.0.0.121
+! account_is_public_ipv4 172.16.0.10
+! account_is_public_ipv4 192.168.1.20
+[[ "$(HEXTUNNEL_PUBLIC_IPV4=149.130.209.224 account_public_ipv4)" == 149.130.209.224 ]]
+
+printf 'optimized administration menu, public IPv4 and SSH credential delivery: ok\n'
