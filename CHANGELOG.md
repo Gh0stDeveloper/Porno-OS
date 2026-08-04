@@ -5,7 +5,9 @@
 - La espera de APT/DPKG ahora consulta los locks reales mediante `fuser` o `lslocks`.
 - El daemon permanente `unattended-upgrade-shutdown --wait-for-signal` deja de bloquear falsamente la instalación.
 - El diagnóstico muestra únicamente procesos que poseen un lock del gestor de paquetes; ya no incluye el propio proceso `awk` usado para construir el mensaje.
-- Se añade una prueba de regresión que mantiene activo el vigilante de apagado sin lock y exige que la instalación continúe.
+- La caché verificada deja de aplicar permisos `0700` sobre directorios compartidos existentes como `/tmp`.
+- Antes de ejecutar APT o DPKG se comprueba y, si es necesario, se restaura `/tmp` como `root:root` con modo `1777`.
+- Se añaden pruebas de regresión para el vigilante sin lock, la descarga de ZiVPN a un archivo directo en un directorio compartido y la reparación de permisos temporales.
 - Los timeouts internos de APT permanecen como protección contra carreras entre la comprobación y la ejecución.
 
 ## 1.0.0-rc.9 — 2026-08-03
