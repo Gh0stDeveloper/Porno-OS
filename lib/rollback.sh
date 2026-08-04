@@ -76,6 +76,45 @@ restore_transaction_files() {
   done < <(tac "$dir/files.manifest" 2>/dev/null || true)
 }
 
+quiesce_transaction_services() {
+  local dir="$1" marker service enabled active
+  [[ -f "$dir/services.manifest" ]] || return 0
+
+  # Stop in reverse registration order so dependants are terminated before
+  # their supporting services. A unit may already have LoadState=not-found
+  # while its process is still alive, therefore stop/kill is attempted without
+  # filtering by LoadState.
+  while IFS='|' read -r marker service enabled active; do
+    [[ "$marker" == SERVICE && -n "$service" ]] || continue
+    [[ "$active" == inactive ]] || continue
+
+    if systemctl is-active --quiet "$service" 2>/dev/null; then
+      log_warn "Deteniendo servicio creado durante la transacción: $service"
+    fi
+    systemctl stop "$service" >/dev/null 2>&1 || true
+    if systemctl is-active --quiet "$service" 2>/dev/null; then
+      systemctl kill --kill-who=all --signal=TERM "$service" >/dev/null 2>&1 || true
+      sleep 1
+      systemctl stop "$service" >/dev/null 2>&1 || true
+    fi
+    if systemctl is-active --quiet "$service" 2>/dev/null; then
+      systemctl kill --kill-who=all --signal=KILL "$service" >/dev/null 2>&1 || true
+      systemctl stop "$service" >/dev/null 2>&1 || true
+    fi
+    systemctl reset-failed "$service" >/dev/null 2>&1 || true
+  done < <(tac "$dir/services.manifest" 2>/dev/null || true)
+}
+
+cleanup_latest_rolled_back_services() {
+  local dir status
+  dir="$({ find "$HEXTUNNEL_STATE/transactions" -mindepth 1 -maxdepth 1 -type d 2>/dev/null || true; } | sort | tail -n1)"
+  [[ -n "$dir" && -d "$dir" ]] || return 0
+  status="$(transaction_status "$dir")"
+  [[ "$status" == ROLLED_BACK ]] || return 0
+  quiesce_transaction_services "$dir"
+  systemctl daemon-reload >/dev/null 2>&1 || true
+}
+
 restore_transaction_services() {
   local dir="$1" marker service enabled active load_state
   [[ -f "$dir/services.manifest" ]] || return 0
@@ -134,6 +173,7 @@ rollback_transaction() {
 
   status="$(transaction_status "$dir")"
   if [[ "$status" == ROLLED_BACK ]]; then
+    cleanup_latest_rolled_back_services
     log_info "La transacción ya fue restaurada: $(basename "$dir")"
     ((acquired_here == 0)) || operation_lock_release
     return 0
@@ -144,6 +184,7 @@ rollback_transaction() {
   fi
 
   log_warn "Restaurando transacción: $(basename "$dir")"
+  quiesce_transaction_services "$dir"
   restore_transaction_files "$dir"
   if declare -F restore_ipv6_runtime_state >/dev/null 2>&1; then
     restore_ipv6_runtime_state "$dir"
