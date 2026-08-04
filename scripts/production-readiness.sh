@@ -34,6 +34,7 @@ required=(
   scripts/build-release.sh scripts/resolve-component-lock.sh scripts/prepare-legacy-runtime.sh
   tests/unit/test-runtime-config-readonly.sh tests/unit/test-package-manager-lock.sh
   tests/unit/test-install-runtime-network.sh tests/unit/test-rollback-service-quiesce.sh
+  tests/unit/test-network-policy-config-format.sh
   SECURITY.md CHANGELOG.md VERSION
 )
 for path in "${required[@]}"; do
@@ -81,6 +82,7 @@ run_step runtime-config-readonly bash tests/unit/test-runtime-config-readonly.sh
 run_step package-manager-lock bash tests/unit/test-package-manager-lock.sh
 run_step install-runtime-network bash tests/unit/test-install-runtime-network.sh
 run_step rollback-service-quiesce bash tests/unit/test-rollback-service-quiesce.sh
+run_step network-policy-config-format bash tests/unit/test-network-policy-config-format.sh
 run_step module-contract bash tests/unit/test-module-contract.sh
 run_step production-operations bash tests/unit/test-production-operations.sh
 run_step license-runtime bash tests/unit/test-license-runtime.sh
