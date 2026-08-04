@@ -1,12 +1,23 @@
 # Changelog
 
+## 1.0.0-rc.9 — 2026-08-03
+
+- IPv6 se deshabilita por defecto al completar la instalación, después de fijar los listeners públicos administrados a IPv4.
+- La política IPv4-only se omite si la sesión SSH actual usa IPv6, evitando cortar el acceso administrativo.
+- El rollback restaura el archivo `sysctl`, el estado runtime previo de IPv6 y las configuraciones de listeners.
+- Xray, Sing-box, Hysteria 2 y ZiVPN se descargan anticipadamente en paralelo mientras se instalan los primeros módulos.
+- La caché persistente solo reutiliza artefactos que vuelven a superar el SHA-256 oficial o fijado por el `component-lock`.
+- Las descargas paralelas se cancelan limpiamente cuando una transacción falla o finaliza.
+- Se añade una prueba de regresión para la detección de sesiones SSH IPv6, caché verificada, materialización por URL y rechazo de artefactos corruptos.
+- La implementación toma como referencia funcional `hex-auto-optimizado.sh`, manteniendo la arquitectura Bash modular y transaccional.
+
 ## 1.0.0-rc.8 — 2026-08-03
 
 - La espera de APT/DPKG muestra cada 15 segundos el proceso detectado, PID, estado, tiempo transcurrido y límite restante.
 - La instalación muestra fase, porcentaje y duración para cada módulo resuelto.
 - El runtime visible se mantiene separado del núcleo común para no alterar servicios que cargan configuración en modo de solo lectura.
 - Se amplía la prueba de regresión del gestor de paquetes para cubrir el diagnóstico del proceso y la salida de progreso.
-- La mejora toma como referencia la interfaz del fuente `hex-auto-optimizado.sh`, sin copiar prácticas inseguras como borrar locks, usar permisos `777`, sustituir `resolv.conf` o instalar componentes sin checksum.
+- La mejora toma como referencia la interfaz del fuente `hex-auto-optimizado.sh`.
 
 ## 1.0.0-rc.7 — 2026-08-03
 
@@ -88,6 +99,5 @@
 
 ## Unreleased
 
-- Caché persistente verificada de artefactos y predescargas paralelas pendientes de integración por componente.
 - Ampliación formal de la matriz a Debian 11/Ubuntu 20.04 y arquitecturas ARM32/i386 pendiente de pruebas reales.
 - Validación integral pendiente en VPS AMD64 y ARM64 limpias antes de declarar la release estable.
