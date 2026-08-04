@@ -23,18 +23,19 @@ VERSION="$(tr -d '\r\n' < VERSION)"
 
 required=(
   install.sh beta-install.sh
-  bin/hextunnel bin/hextunnel-account bin/hextunnel-backup bin/hextunnel-doctor
-  bin/hextunnel-health bin/hextunnel-nat bin/hextunnel-update
+  bin/hextunnel bin/hextunnel-account bin/hextunnel-arm64-menu
+  bin/hextunnel-backup bin/hextunnel-doctor bin/hextunnel-health bin/hextunnel-nat bin/hextunnel-update
   bin/hextunnel-legacy-preflight bin/hextunnel-finalize-install
   bin/hextunnel-private-install bin/hextunnel-private-upgrade bin/hextunnel-beta-install
   bin/hextunnel-license bin/hextunnel-install-license-runtime
   bin/hextunnel-install-locked-component bin/hextunnel-slipstream-compat
   lib/install-runtime.sh lib/install-runtime-guards.sh lib/network-policy.sh
+  lib/account-display.sh lib/account-runtime-guards.sh
   docs/ARCHITECTURE.md docs/BETA.md docs/OPERATIONS.md docs/RECOVERY.md docs/PRIVATE_DISTRIBUTION.md
   scripts/build-release.sh scripts/resolve-component-lock.sh scripts/prepare-legacy-runtime.sh
   tests/unit/test-runtime-config-readonly.sh tests/unit/test-package-manager-lock.sh
   tests/unit/test-install-runtime-network.sh tests/unit/test-rollback-service-quiesce.sh
-  tests/unit/test-network-policy-config-format.sh
+  tests/unit/test-network-policy-config-format.sh tests/unit/test-menu-parity.sh
   SECURITY.md CHANGELOG.md VERSION
 )
 for path in "${required[@]}"; do
@@ -83,6 +84,7 @@ run_step package-manager-lock bash tests/unit/test-package-manager-lock.sh
 run_step install-runtime-network bash tests/unit/test-install-runtime-network.sh
 run_step rollback-service-quiesce bash tests/unit/test-rollback-service-quiesce.sh
 run_step network-policy-config-format bash tests/unit/test-network-policy-config-format.sh
+run_step menu-parity bash tests/unit/test-menu-parity.sh
 run_step module-contract bash tests/unit/test-module-contract.sh
 run_step production-operations bash tests/unit/test-production-operations.sh
 run_step license-runtime bash tests/unit/test-license-runtime.sh
@@ -125,15 +127,17 @@ if [[ "${HEXTUNNEL_RELEASE_BUILD:-0}" == 1 ]]; then
   grep -Fqx "hextunnel-$VERSION/config/component-lock.env" "$archive_listing" \
     || fail "el paquete no contiene config/component-lock.env"
 fi
-grep -Fqx "hextunnel-$VERSION/bin/hextunnel-license" "$archive_listing" \
-  || fail "el paquete no contiene hextunnel-license"
-grep -Fqx "hextunnel-$VERSION/bin/hextunnel-private-upgrade" "$archive_listing" \
-  || fail "el paquete no contiene el actualizador privado"
-grep -Fqx "hextunnel-$VERSION/bin/hextunnel-install-license-runtime" "$archive_listing" \
-  || fail "el paquete no contiene el runtime de licencia"
-grep -Fqx "hextunnel-$VERSION/lib/install-runtime-guards.sh" "$archive_listing" \
-  || fail "el paquete no contiene las guardas del runtime"
-grep -Fqx "hextunnel-$VERSION/lib/network-policy.sh" "$archive_listing" \
-  || fail "el paquete no contiene la política de red"
+for packaged in \
+  bin/hextunnel-license \
+  bin/hextunnel-private-upgrade \
+  bin/hextunnel-install-license-runtime \
+  bin/hextunnel-arm64-menu \
+  lib/install-runtime-guards.sh \
+  lib/network-policy.sh \
+  lib/account-display.sh \
+  lib/account-runtime-guards.sh; do
+  grep -Fqx "hextunnel-$VERSION/$packaged" "$archive_listing" \
+    || fail "el paquete no contiene $packaged"
+done
 
 printf '\nProduction readiness: OK (%s)\n' "$VERSION"
