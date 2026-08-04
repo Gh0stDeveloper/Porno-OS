@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.0-rc.12 — 2026-08-04
+
+- La política IPv4-only valida Xray usando un archivo temporal con sufijo `.json`, permitiendo que Xray detecte correctamente el formato.
+- Hysteria v1 y ZiVPN también generan temporales JSON con extensión explícita para conservar el formato durante validaciones y reemplazos atómicos.
+- Las rutas de configuración y binarios de la política de red pueden sobrescribirse en pruebas sin alterar los valores de producción.
+- Se añade una prueba funcional con un Xray simulado que devuelve código `23` cuando el archivo temporal no termina en `.json`.
+- El rollback de `rc.11` se conserva y continúa deteniendo servicios antes de restaurar sus unidades.
+
 ## 1.0.0-rc.11 — 2026-08-04
 
 - El rollback detiene primero los servicios creados durante la transacción antes de restaurar o eliminar sus unidades systemd.
