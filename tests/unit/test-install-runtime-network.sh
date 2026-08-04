@@ -52,8 +52,13 @@ key='test-artifact'
 
 artifact_prefetch_register "$key" "$url" artifact_cache_store_locked \
   "$key" "$url" "$expected"
-run_cmd curl -fsSL -o "$TMP/materialized.bin" "$url"
-cmp -s "$TMP/source.bin" "$TMP/materialized.bin"
+
+shared_tmp="$TMP/shared-tmp"
+mkdir -p "$shared_tmp"
+chmod 1777 "$shared_tmp"
+run_cmd curl -fsSL -o "$shared_tmp/materialized.bin" "$url"
+cmp -s "$TMP/source.bin" "$shared_tmp/materialized.bin"
+[[ "$(stat -c '%a' "$shared_tmp")" == 1777 ]]
 artifact_cache_validate "$key"
 
 printf 'corrupt\n' > "$HEXTUNNEL_ARTIFACT_CACHE_DIR/$key"
