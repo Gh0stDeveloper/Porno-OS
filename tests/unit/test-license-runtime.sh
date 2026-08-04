@@ -44,6 +44,41 @@ for file in \
   bash -n "$file"
 done
 
+# Reproduce el fallo de rc.13: el actualizador está presente y legible, pero el
+# tarball comercial lo entregó sin bit ejecutable. El entrypoint debe restaurar
+# 0700 y ejecutarlo mediante bash, no informar que el archivo está ausente.
+private_package="$TMP/private-package"
+mkdir -p "$private_package/bin"
+cp "$ROOT/bin/hextunnel-private-install" "$private_package/bin/hextunnel-private-install"
+cat > "$private_package/bin/hextunnel-private-upgrade" <<'UPGRADE'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+printf 'private-upgrade-executed\n'
+UPGRADE
+chmod 0600 "$private_package/bin/hextunnel-private-upgrade"
+if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+  private_upgrade_output="$(
+    env \
+      HEXTUNNEL_LICENSE_PREVALIDATED=1 \
+      HEXTUNNEL_OPERATION=upgrade \
+      HEXTUNNEL_PRIVATE_PACKAGE_ROOT="$private_package" \
+      bash "$private_package/bin/hextunnel-private-install"
+  )"
+else
+  private_upgrade_output="$(
+    sudo -E env \
+      HEXTUNNEL_LICENSE_PREVALIDATED=1 \
+      HEXTUNNEL_OPERATION=upgrade \
+      HEXTUNNEL_PRIVATE_PACKAGE_ROOT="$private_package" \
+      bash "$private_package/bin/hextunnel-private-install"
+  )"
+fi
+[[ "$private_upgrade_output" == private-upgrade-executed ]]
+[[ "$(privileged stat -c '%a' "$private_package/bin/hextunnel-private-upgrade")" == 700 ]]
+
+grep -Fq '[[ -f "$private_updater" && -r "$private_updater" ]]' "$ROOT/bin/hextunnel-private-install"
+grep -Fq 'chmod 0700 "$private_updater"' "$ROOT/bin/hextunnel-private-install"
+
 license_runtime="$ROOT/bin/hextunnel-license"
 grep -Fq 'flock -w 30 9' "$license_runtime"
 grep -Fq 'atomic_update_lease' "$license_runtime"
