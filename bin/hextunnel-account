@@ -7,6 +7,8 @@ for file in common logging backup rollback systemd firewall secrets validation m
   source "$ROOT/lib/$file.sh"
 done
 # shellcheck disable=SC1091
+source "$ROOT/lib/account-runtime-guards.sh"
+# shellcheck disable=SC1091
 source "$ROOT/lib/account-display.sh"
 HEXTUNNEL_DRY_RUN="${HEXTUNNEL_DRY_RUN:-0}"
 HEXTUNNEL_NON_INTERACTIVE="${HEXTUNNEL_NON_INTERACTIVE:-0}"
