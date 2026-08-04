@@ -6,6 +6,8 @@ for file in common logging backup rollback systemd firewall secrets validation m
   # shellcheck disable=SC1090
   source "$ROOT/lib/$file.sh"
 done
+# shellcheck disable=SC1091
+source "$ROOT/lib/account-display.sh"
 HEXTUNNEL_DRY_RUN="${HEXTUNNEL_DRY_RUN:-0}"
 HEXTUNNEL_NON_INTERACTIVE="${HEXTUNNEL_NON_INTERACTIVE:-0}"
 init_logging
@@ -20,6 +22,7 @@ hextunnel-account renew <protocolo> <usuario> <YYYY-MM-DD>
 hextunnel-account suspend <protocolo> <usuario>
 hextunnel-account resume <protocolo> <usuario>
 hextunnel-account delete <protocolo> <usuario>
+hextunnel-account show <protocolo> <usuario>
 hextunnel-account list
 EOF
 }
@@ -56,6 +59,10 @@ case "$command" in
   delete)
     (($# == 2)) || { usage; exit 64; }
     run_transactional_account_action account_delete "account-delete-$1-$2" "$@"
+    ;;
+  show)
+    (($# == 2)) || { usage; exit 64; }
+    account_show "$@"
     ;;
   list)
     account_list
