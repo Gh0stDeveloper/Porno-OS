@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.0-rc.11 — 2026-08-04
+
+- El rollback detiene primero los servicios creados durante la transacción antes de restaurar o eliminar sus unidades systemd.
+- Los servicios se apagan en orden inverso de registro para terminar dependientes antes que servicios auxiliares.
+- Si una unidad queda `LoadState=not-found` pero mantiene procesos activos, el rollback intenta `stop`, `TERM` y finalmente `KILL` de forma limitada a esa unidad administrada.
+- Antes del preflight, una nueva instalación limpia servicios residuales registrados en la última transacción `ROLLED_BACK`.
+- Se añade una prueba de regresión que impide detener servicios preexistentes activos como SSH y valida el orden `quiesce -> archivos -> IPv6 -> firewall -> servicios -> usuarios`.
+
 ## 1.0.0-rc.10 — 2026-08-04
 
 - La espera de APT/DPKG ahora consulta los locks reales mediante `fuser` o `lslocks`.
@@ -63,11 +71,16 @@
 
 ## 1.0.0-rc.3 — 2026-08-01
 
-- El runtime de actualización renueva el panel ARM64 desde el paquete instalado.
-- El wrapper del menú AMD64 se reconstruye de forma segura sin sobrescribir el menú original.
-- El bootstrap de actualización valida sintaxis Bash antes de ejecutarse.
-- Las pruebas de licencia exigen que la actualización conserve y refresque el menú correspondiente a la arquitectura.
-- La publicación comercial ejecuta el gate completo de producción antes de registrar el paquete.
+- El runtime de actualización renueva el panel ARM64 desde la release nueva.
+- AMD64 reconstruye el wrapper sin sobrescribir `menu-original`.
+- El bootstrap descargado por `hextunnel-upgrade` pasa `bash -n` antes de ejecutarse.
+- La actualización respalda framework, menú, runtime y unidades de licencia dentro de la misma transacción.
+- Antes del commit valida todos los módulos instalados, el estado de licencia y el timer de renovación.
+- Cualquier fallo ejecuta rollback en vez de dejar una actualización parcial.
+- La renovación de lease usa `flock`, evitando carreras entre el timer y una renovación manual.
+- `license-state.env` se reemplaza atómicamente en vez de modificarse con `sed + append`.
+- La clave pública verificada queda almacenada localmente y se reutiliza; solo se descarga si falta o no coincide con el SHA-256 fijado.
+- El token de activación se envía a `curl` mediante un archivo JSON modo `600`, no como argumento del proceso.
 
 ## 1.0.0-rc.2 — 2026-08-01
 
