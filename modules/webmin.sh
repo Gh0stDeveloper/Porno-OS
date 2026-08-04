@@ -20,7 +20,7 @@ webmin_install_repository() {
     return 0
   fi
   tmp="$(mktemp /tmp/webmin-developers-key.XXXXXX)"
-  curl -fL --retry 3 --connect-timeout 10 -o "$tmp" "$key_url"
+  run_cmd curl -fL --retry 3 --connect-timeout 10 -o "$tmp" "$key_url"
   key_ids="$(gpg --batch --show-keys --with-colons "$tmp" 2>/dev/null | awk -F: '$1=="pub" || $1=="sub" {print toupper($5)}' || true)"
   grep -Fqx "${expected_key_id^^}" <<< "$key_ids" \
     || { rm -f "$tmp"; die "La clave oficial de Webmin no contiene el identificador esperado $expected_key_id."; }
@@ -32,9 +32,9 @@ webmin_install_repository() {
 deb [signed-by=$keyring] https://download.webmin.com/download/newkey/repository stable contrib
 EOF
   chmod 644 "$repo_file"
-  apt-get clean
-  apt-get update
-  apt-get install -y --install-recommends webmin
+  run_cmd apt-get clean
+  run_cmd apt-get update
+  run_cmd apt-get install -y --install-recommends webmin
 }
 
 webmin_set_config_value() {
