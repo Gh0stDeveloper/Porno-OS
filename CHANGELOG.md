@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.0-rc.10 — 2026-08-04
+
+- La espera de APT/DPKG ahora consulta los locks reales mediante `fuser` o `lslocks`.
+- El daemon permanente `unattended-upgrade-shutdown --wait-for-signal` deja de bloquear falsamente la instalación.
+- El diagnóstico muestra únicamente procesos que poseen un lock del gestor de paquetes; ya no incluye el propio proceso `awk` usado para construir el mensaje.
+- Se añade una prueba de regresión que mantiene activo el vigilante de apagado sin lock y exige que la instalación continúe.
+- Los timeouts internos de APT permanecen como protección contra carreras entre la comprobación y la ejecución.
+
 ## 1.0.0-rc.9 — 2026-08-03
 
 - IPv6 se deshabilita por defecto al completar la instalación, después de fijar los listeners públicos administrados a IPv4.
