@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.0-rc.15 — 2026-08-04
+
+- Las credenciales dejan de usar la IPv4 privada de la VPC como host público.
+- La detección prioriza `HEXTUNNEL_PUBLIC_IPV4`, la IP pública firmada en la licencia y servicios externos IPv4; se rechazan rangos privados, loopback, link-local, CGNAT y documentación.
+- Al crear una cuenta SSH desde el menú, el administrador introduce y confirma una contraseña visible en lugar de recibir una contraseña aleatoria obligatoria.
+- Las contraseñas SSH interactivas se validan antes de modificar usuarios y no se pasan como argumentos del proceso.
+- La entrega de credenciales adopta un bloque más legible con IPv4 pública, puertos, estado y conexiones compactas `HOST:PUERTO@USUARIO:CONTRASEÑA`.
+- La creación SSH comprueba y abre las reglas locales administradas para SSH, TLS y WebSocket dentro de la transacción.
+- Las operaciones transaccionales de cuentas incluyen snapshot del firewall para restaurarlo si la creación falla.
+- El plan de prueba documenta que las Security Lists o NSG del proveedor deben permitir los puertos además del firewall local.
+
 ## 1.0.0-rc.14 — 2026-08-04
 
 - La actualización privada distingue entre un archivo ausente y un archivo presente sin bit ejecutable.
