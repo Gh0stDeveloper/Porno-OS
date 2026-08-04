@@ -7,6 +7,13 @@ else
   die "Falta el runtime de instalación: $HEXTUNNEL_ROOT/lib/install-runtime.sh"
 fi
 
+if [[ -r "$HEXTUNNEL_ROOT/lib/network-policy.sh" ]]; then
+  # shellcheck disable=SC1091
+  source "$HEXTUNNEL_ROOT/lib/network-policy.sh"
+else
+  die "Falta la política de red: $HEXTUNNEL_ROOT/lib/network-policy.sh"
+fi
+
 install_framework() {
   local source_root="$HEXTUNNEL_ROOT"
   ensure_dir 755 /usr/local/bin
