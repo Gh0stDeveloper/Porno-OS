@@ -1,4 +1,4 @@
-# Hex Tunnel 1.0.0-rc.13 — prueba privada
+# Hex Tunnel 1.0.0-rc.14 — prueba privada
 
 Esta prueba valida instalación comercial, activación permanente, reseller, renovación, actualización privada, menú administrativo y compatibilidad AMD64/ARM64 antes de declarar estable la distribución.
 
@@ -26,6 +26,7 @@ El perfil ARM64 instala SSH/TLS, Xray, Hysteria v1, Hysteria 2, ZiVPN, Webmin, m
 - `rc.13`: el menú ARM64 adopta la navegación de `hex-auto-optimizado.sh`, con submenús de cuentas, conexiones, servicios, respaldos, utilidades y configuración avanzada.
 - `rc.13`: `hextunnel-account show` entrega credenciales y enlaces para SSH, VLESS, VMESS, Trojan, Hysteria, Hysteria 2 y ZiVPN.
 - `rc.13`: crear o eliminar cuentas Xray valida siempre un temporal con sufijo `.json`.
+- `rc.14`: la actualización privada recupera automáticamente el permiso ejecutable del actualizador empaquetado y el publicador comercial verifica los modos dentro del TAR.GZ.
 
 El instalador nunca elimina archivos lock ni termina procesos de APT/DPKG para forzar acceso. El rollback cancela descargas anticipadas, apaga servicios nuevos, restaura firewall, archivos administrados, estados originales y el estado runtime previo de IPv6.
 
@@ -116,7 +117,7 @@ Los artefactos verificados permanecen en `/var/cache/hextunnel/artifacts` durant
 
 ## Actualización comercial
 
-Cuando `1.0.0-rc.13` sea la release activa:
+Cuando `1.0.0-rc.14` sea la release activa:
 
 ```bash
 sudo hextunnel-upgrade
@@ -126,7 +127,21 @@ sudo hextunnel doctor
 sudo menu
 ```
 
-La actualización debe conservar cuentas, listeners, NAT, firewall, configuraciones, activación, reseller y menú.
+Durante la publicación, `ghostctl` debe comprobar que estos archivos son ejecutables tanto en staging como dentro del TAR.GZ:
+
+```text
+install.sh
+bin/hextunnel-private-install
+bin/hextunnel-private-upgrade
+bin/hextunnel-license
+bin/hextunnel-install-license-runtime
+```
+
+La actualización debe conservar cuentas, listeners, NAT, firewall, configuraciones, activación, reseller y menú. No debe aparecer:
+
+```text
+ERROR: El paquete no contiene el actualizador privado.
+```
 
 ## Verificación posterior
 
