@@ -1,4 +1,4 @@
-# Hex Tunnel 1.0.0-rc.11 — prueba privada
+# Hex Tunnel 1.0.0-rc.12 — prueba privada
 
 Esta prueba valida instalación comercial, activación permanente, reseller, renovación, actualización privada y compatibilidad AMD64/ARM64 antes de declarar estable la distribución.
 
@@ -22,6 +22,7 @@ El perfil ARM64 instala SSH/TLS, Xray, Hysteria v1, Hysteria 2, ZiVPN, Webmin, m
 - `rc.9`: descargas anticipadas paralelas verificadas, caché persistente e IPv4-only por defecto.
 - `rc.10`: detección real de locks APT/DPKG, preservación de `/tmp` y reparación automática de su modo `1777`.
 - `rc.11`: el rollback apaga servicios creados durante una transacción antes de retirar sus unidades; el siguiente preflight limpia residuos de la última transacción revertida.
+- `rc.12`: Xray, Hysteria v1 y ZiVPN conservan una extensión JSON explícita durante la validación temporal de la política IPv4-only.
 
 El instalador nunca elimina archivos lock ni termina procesos de APT/DPKG para forzar acceso. El rollback cancela descargas anticipadas, apaga servicios nuevos, restaura firewall, archivos administrados, estados originales y el estado runtime previo de IPv6.
 
@@ -58,6 +59,12 @@ Al finalizar mediante una sesión SSH IPv4 debe aparecer:
 IPv6 deshabilitado; los listeners administrados quedaron fijados a IPv4.
 ```
 
+Antes de reemplazar `/etc/xray/config.json`, Xray debe aceptar una ruta temporal que termine en `.json`. No debe aparecer:
+
+```text
+Failed to get format of /tmp/hextunnel-xray-ipv4.*
+```
+
 Si la sesión SSH activa usa IPv6, la política se omite para no cortar el acceso.
 
 ## Recuperación
@@ -71,13 +78,13 @@ sudo chmod 700 /tmp/hextunnel-install.sh
 sudo /tmp/hextunnel-install.sh install
 ```
 
-Antes de validar los puertos, `rc.11` revisa la última transacción `ROLLED_BACK` y detiene únicamente servicios que estaban inactivos antes de esa transacción. No debe detener SSH ni otro servicio que ya estuviera activo.
+Antes de validar los puertos, el instalador revisa la última transacción `ROLLED_BACK` y detiene únicamente servicios que estaban inactivos antes de esa transacción. No debe detener SSH ni otro servicio que ya estuviera activo.
 
 Los artefactos verificados permanecen en `/var/cache/hextunnel/artifacts` durante siete días por defecto. Un archivo corrupto o con SHA-256 diferente se rechaza y vuelve a descargarse.
 
 ## Actualización comercial
 
-Cuando `1.0.0-rc.11` sea la release activa:
+Cuando `1.0.0-rc.12` sea la release activa:
 
 ```bash
 sudo hextunnel-upgrade
