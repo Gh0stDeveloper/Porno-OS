@@ -1,52 +1,251 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-
 [[ "${EUID:-$(id -u)}" -eq 0 ]] || exec sudo -E "$0" "$@"
 
-while true; do
-  command -v clear >/dev/null 2>&1 && clear || true
-  printf '\033[1;36m============================================================\033[0m\n'
-  printf '\033[1;37m                    HEX TUNNEL ARM64\033[0m\n'
-  printf '\033[0;36m          @Gh0stDeveloper  ·  @Jotchua_DevzZ\033[0m\n'
-  if [[ -x /usr/local/bin/hextunnel-license ]]; then
-    printf '\033[0;32mActivación: permanente\033[0m\n'
-    printf '\033[0;36mReseller: %s\033[0m\n' \
-      "$(/usr/local/bin/hextunnel-license reseller 2>/dev/null || printf 'Hex Tunnel Bot Gen')"
-  fi
-  printf '\033[1;36m============================================================\033[0m\n'
-  cat <<'EOF'
+RED='\033[1;31m'; GREEN='\033[1;32m'; YELLOW='\033[1;33m'; CYAN='\033[1;36m'
+WHITE='\033[1;37m'; GRAY='\033[38;5;245m'; ACC='\033[38;5;44m'; NC='\033[0m'; BOLD='\033[1m'
+WIDTH=63
+LINE_D="$(printf '═%.0s' $(seq 1 "$WIDTH"))"
+LINE_S="$(printf '─%.0s' $(seq 1 "$WIDTH"))"
 
-  1) Estado de módulos
-  2) Diagnóstico completo
-  3) Administrar cuentas
-  4) Estado de activación
-  5) Renovar autorización
-  6) Actualizar Hex Tunnel
-  7) Instalar módulo adicional
-  8) Desinstalar módulo
-  0) Salir
-EOF
-  printf '\nArquitectura: %s\n' "$(uname -m)"
-  read -r -p 'Selecciona una opción: ' option
-  case "$option" in
-    1) hextunnel status ;;
-    2) hextunnel doctor ;;
-    3) hextunnel account ;;
-    4) hextunnel-license status ;;
-    5) hextunnel-license renew ;;
-    6) hextunnel-upgrade ;;
-    7)
-      printf 'Módulos ARM64 disponibles: ssh xray hysteria hysteria2 zivpn webmin\n'
-      read -r -p 'Módulo: ' module
-      hextunnel install "$module" --no-reboot
-      ;;
-    8)
-      read -r -p 'Módulo: ' module
-      hextunnel uninstall "$module"
-      ;;
-    0) exit 0 ;;
-    *) printf 'Opción inválida.\n' ;;
-  esac
-  printf '\n'
-  read -r -p 'Presiona Enter para continuar...' _
-done
+plain() { printf '%b' "$1" | sed -E 's/\x1B\[[0-9;]*[mK]//g'; }
+vis() { local t; t="$(plain "$1")"; printf '%s' "${#t}"; }
+pad() { local t="$1" w="$2" n; n=$((w-$(vis "$t"))); ((n<0)) && n=0; printf '%s%*s' "$t" "$n" ''; }
+top() { printf "${ACC}╔%s╗${NC}\n" "$LINE_D"; }
+sep() { printf "${ACC}╠%s╣${NC}\n" "$LINE_S"; }
+bottom() { printf "${ACC}╚%s╝${NC}\n" "$LINE_D"; }
+row() { local t="$1" n; n=$((WIDTH-2-$(vis "$t"))); ((n<0)) && n=0; printf "${ACC}║${NC} %b%*s ${ACC}║${NC}\n" "$t" "$n" ''; }
+title() { local t="$1" n l r; n="$(vis "$t")"; l=$(((WIDTH-n)/2)); ((l<0)) && l=0; r=$((WIDTH-n-l)); ((r<0)) && r=0; printf "${ACC}║${NC}%*s%b%*s${ACC}║${NC}\n" "$l" '' "$t" "$r" ''; }
+item() { row "${WHITE}[${YELLOW}$1${WHITE}]${NC} $2"; }
+pair() { printf "${ACC}║${NC} ${WHITE}[${YELLOW}%s${WHITE}]${NC} %s ${ACC}│${NC} ${WHITE}[${YELLOW}%s${WHITE}]${NC} %s ${ACC}║${NC}\n" "$1" "$(pad "$2" 24)" "$3" "$(pad "$4" 24)"; }
+clear_screen() { command -v clear >/dev/null 2>&1 && clear || printf '\033c'; }
+pause_menu() { printf "\n${GRAY}Presiona Enter para continuar...${NC}"; read -r _ || true; }
+confirm() { local a; read -r -p "$1 [s/N]: " a; [[ "$a" =~ ^[SsYy]$ ]]; }
+
+public_ip() { curl -4 -fsS --connect-timeout 2 --max-time 4 https://api.ipify.org 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}'; }
+public_host() {
+  local host="${HEXTUNNEL_DOMAIN:-}"
+  [[ -n "$host" ]] || host="$(awk -F= '$1=="HEXTUNNEL_DOMAIN" {gsub(/[\047\042]/,"",$2); print $2}' /etc/hextunnel/hextunnel.env 2>/dev/null | tail -n1)"
+  [[ -n "$host" ]] || host="$(cat /etc/deekayvpn/domain.txt 2>/dev/null || true)"
+  [[ -n "$host" ]] || host="$(public_ip)"
+  printf '%s' "$host"
+}
+health() {
+  local u active=0 total=0
+  for u in ssh xray hextunnel-hysteria hysteria2 zivpn webmin; do
+    systemctl show "$u" >/dev/null 2>&1 || continue
+    total=$((total+1)); systemctl is-active --quiet "$u" && active=$((active+1))
+  done
+  if ((total>0 && active==total)); then printf "${GREEN}EN LÍNEA${NC}"; else printf "${YELLOW}%s/%s ACTIVOS${NC}" "$active" "$total"; fi
+}
+header() {
+  local os arch ip host version reseller ram
+  os="$(. /etc/os-release 2>/dev/null; printf '%s %s' "${ID:-linux}" "${VERSION_ID:-}")"
+  arch="$(uname -m)"; ip="$(public_ip)"; host="$(public_host)"
+  version="$(hextunnel version 2>/dev/null | awk '{print $3}' || printf desconocida)"
+  reseller="$(hextunnel-license reseller 2>/dev/null || printf 'Hex Tunnel Bot Gen')"
+  ram="$(free 2>/dev/null | awk '/Mem:/ {if($2>0) printf "%.1f%%",($3/$2)*100; else print "n/a"}')"
+  top; title "${WHITE}${BOLD}H E X   T U N N E L${NC}${GRAY} · @Gh0stDeveloper${NC}"; sep
+  row "${GRAY}SO:${NC} ${WHITE}${os}${NC}  ${GRAY}ARQ:${NC} ${WHITE}${arch}${NC}  ${GRAY}VERSIÓN:${NC} ${WHITE}${version}${NC}"
+  row "${GRAY}IP:${NC} ${WHITE}${ip:-n/a}${NC}  ${GRAY}HOST:${NC} ${WHITE}${host:-n/a}${NC}"
+  row "${GRAY}ESTADO:${NC} $(health)  ${GRAY}RAM:${NC} ${WHITE}${ram}${NC}"
+  row "${GRAY}ACTIVACIÓN:${NC} ${GREEN}permanente${NC}  ${GRAY}RESELLER:${NC} ${CYAN}${reseller}${NC}"
+  sep; title "${WHITE}${BOLD}PUERTOS EN SERVICIO${NC}"
+  row 'SSH 22/299 · TLS 443/4443 · WS 25/80/2082/2086/8080/8880/10080'
+  row 'Hysteria 36712/UDP · Hysteria2 36713/UDP · ZiVPN 6000-19999/UDP'
+  bottom
+}
+
+expiry() { [[ "$1" =~ ^[1-9][0-9]*$ ]] && date -d "+$1 days" +%Y-%m-%d; }
+list_accounts() { hextunnel-account list 2>/dev/null | awk -v p="$1" 'NR==1 || $1==p' || true; }
+create_account() {
+  local p="$1" user days exp sessions=1
+  clear_screen; top; title "${WHITE}${BOLD}CREAR CUENTA ${p^^}${NC}"; bottom
+  read -r -p 'Usuario: ' user; read -r -p 'Validez en días: ' days
+  exp="$(expiry "$days")" || { printf "${RED}Validez inválida.${NC}\n"; pause_menu; return; }
+  [[ "$p" != ssh ]] || { read -r -p 'Máximo de sesiones [1]: ' sessions; sessions="${sessions:-1}"; }
+  if hextunnel-account create "$p" "$user" "$exp" "$sessions" 0 0; then hextunnel-account show "$p" "$user" || true; fi
+  pause_menu
+}
+renew_account() {
+  local p="$1" user days exp
+  clear_screen; list_accounts "$p"; read -r -p 'Usuario: ' user; read -r -p 'Nueva validez en días: ' days
+  exp="$(expiry "$days")" || { printf "${RED}Validez inválida.${NC}\n"; pause_menu; return; }
+  hextunnel-account renew "$p" "$user" "$exp"; pause_menu
+}
+account_action() {
+  local action="$1" p="$2" user
+  clear_screen; list_accounts "$p"; read -r -p 'Usuario: ' user
+  [[ -n "$user" ]] || { printf 'Usuario vacío.\n'; pause_menu; return; }
+  if [[ "$action" == delete ]] && ! confirm "Eliminar definitivamente $p/$user"; then return; fi
+  hextunnel-account "$action" "$p" "$user"; pause_menu
+}
+account_menu() {
+  local p="$1" label="$2" op
+  while true; do
+    clear_screen; top; title "${WHITE}${BOLD}GESTIÓN DE CUENTAS ${label}${NC}"; sep
+    item 1 'Crear cuenta'; item 2 'Renovar expiración'; item 3 'Eliminar cuenta'; item 4 'Listar cuentas'
+    item 5 'Mostrar credencial o enlaces'; item 6 'Suspender cuenta'; item 7 'Reactivar cuenta'; item 0 "${GRAY}Atrás${NC}"; bottom
+    read -r -p 'Selecciona una opción: ' op
+    case "$op" in
+      1) create_account "$p";; 2) renew_account "$p";; 3) account_action delete "$p";;
+      4) clear_screen; list_accounts "$p"; pause_menu;; 5) account_action show "$p";;
+      6) account_action suspend "$p";; 7) account_action resume "$p";; 0) return;;
+    esac
+  done
+}
+xray_menu() {
+  local op
+  while true; do
+    clear_screen; top; title "${WHITE}${BOLD}GESTIÓN DE CUENTAS XRAY${NC}"; sep
+    item 1 'Cuentas VLESS'; item 2 'Cuentas VMESS'; item 3 'Cuentas TROJAN'; item 4 'Listar todas las cuentas Xray'
+    item 5 'Eliminar cuentas expiradas ahora'; item 0 "${GRAY}Atrás${NC}"; bottom
+    read -r -p 'Selecciona una opción: ' op
+    case "$op" in
+      1) account_menu vless VLESS;; 2) account_menu vmess VMESS;; 3) account_menu trojan TROJAN;;
+      4) clear_screen; hextunnel-account list | awk 'NR==1 || $1=="vless" || $1=="vmess" || $1=="trojan"'; pause_menu;;
+      5) /usr/local/sbin/hextunnel-xray-expire; pause_menu;; 0) return;;
+    esac
+  done
+}
+connections_menu() {
+  local op
+  while true; do
+    clear_screen; top; title "${WHITE}${BOLD}CONEXIONES ACTIVAS${NC}"; sep
+    item 1 'Sesiones SSH'; item 2 'Conexiones TCP establecidas'; item 3 'Sockets UDP'; item 4 'Todos los listeners'; item 0 "${GRAY}Atrás${NC}"; bottom
+    read -r -p 'Selecciona una opción: ' op
+    case "$op" in
+      1) clear_screen; who; ss -Htnp state established 2>/dev/null | grep -E ':(22|299)[[:space:]]' || true; pause_menu;;
+      2) clear_screen; ss -Htnp state established 2>/dev/null || true; pause_menu;;
+      3) clear_screen; ss -Hunp 2>/dev/null || true; pause_menu;;
+      4) clear_screen; ss -lntup 2>/dev/null || true; pause_menu;; 0) return;;
+    esac
+  done
+}
+managed_units() {
+  cat <<'UNITS'
+ssh
+hextunnel-sslh
+stunnel4
+fail2ban
+xray
+hextunnel-haproxy
+hextunnel-hysteria-nat
+hextunnel-hysteria
+hysteria2
+hextunnel-zivpn-nat
+zivpn
+webmin
+hextunnel-health.timer
+hextunnel-license-renew.timer
+UNITS
+}
+service_table() {
+  local u state enabled
+  printf '%-34s %-12s %-10s\n' SERVICIO ESTADO INICIO
+  while IFS= read -r u; do
+    systemctl show "$u" >/dev/null 2>&1 || continue
+    state="$(systemctl is-active "$u" 2>/dev/null || true)"; enabled="$(systemctl is-enabled "$u" 2>/dev/null || true)"
+    printf '%-34s %-12s %-10s\n' "$u" "$state" "$enabled"
+  done < <(managed_units)
+}
+service_action() {
+  local action="$1" unit
+  clear_screen; service_table; read -r -p 'Servicio exacto: ' unit
+  case "$action" in restart) systemctl restart "$unit";; start) systemctl enable --now "$unit";; stop) systemctl stop "$unit";; logs) journalctl -u "$unit" -n 100 --no-pager;; esac
+  pause_menu
+}
+services_menu() {
+  local op u
+  while true; do
+    clear_screen; top; title "${WHITE}${BOLD}CONTROL DE SERVICIOS${NC}"; sep
+    item 1 'Ver estado'; item 2 'Reiniciar servicio'; item 3 'Iniciar y habilitar'; item 4 'Detener servicio'; item 5 'Ver logs'; item 6 'Reiniciar todos'; item 0 "${GRAY}Atrás${NC}"; bottom
+    read -r -p 'Selecciona una opción: ' op
+    case "$op" in
+      1) clear_screen; service_table; pause_menu;; 2) service_action restart;; 3) service_action start;; 4) service_action stop;; 5) service_action logs;;
+      6) clear_screen; while IFS= read -r u; do systemctl is-enabled --quiet "$u" 2>/dev/null && systemctl restart "$u" || true; done < <(managed_units); pause_menu;; 0) return;;
+    esac
+  done
+}
+backup_menu() {
+  local op file host
+  while true; do
+    clear_screen; top; title "${WHITE}${BOLD}BACKUP Y RESTAURACIÓN${NC}"; sep
+    item 1 'Crear respaldo'; item 2 'Listar respaldos'; item 3 'Verificar respaldo'; item 4 'Mostrar contenido'; item 5 'Restaurar respaldo'; item 0 "${GRAY}Atrás${NC}"; bottom
+    read -r -p 'Selecciona una opción: ' op
+    case "$op" in
+      1) clear_screen; hextunnel-backup create; pause_menu;;
+      2) clear_screen; find /var/backups/hextunnel -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.age' \) -printf '%TY-%Tm-%Td %TH:%TM %10s %p\n' 2>/dev/null | sort -r; pause_menu;;
+      3) read -r -p 'Ruta: ' file; hextunnel-backup verify "$file"; pause_menu;;
+      4) read -r -p 'Ruta: ' file; hextunnel-backup list "$file"; pause_menu;;
+      5) read -r -p 'Ruta: ' file; host="$(hostname)"; confirm "Restaurar $file" && hextunnel-backup restore "$file" --confirm-host "$host"; pause_menu;; 0) return;;
+    esac
+  done
+}
+enable_bbr() {
+  cat > /etc/sysctl.d/99-hextunnel-bbr.conf <<'BBRCONF'
+net.core.default_qdisc=fq
+net.ipv4.tcp_congestion_control=bbr
+BBRCONF
+  sysctl --system >/dev/null
+}
+utilities_menu() {
+  local op
+  while true; do
+    clear_screen; top; title "${WHITE}${BOLD}UTILIDADES DEL SERVIDOR${NC}"; sep
+    item 1 'Estado de módulos'; item 2 'Diagnóstico completo'; item 3 'Puertos'; item 4 'Firewall'; item 5 'CPU/RAM/Disco'
+    item 6 'Activar BBR'; item 7 'Errores recientes'; item 8 'Estado de licencia'; item 9 'Actualizar Hex Tunnel'; item 0 "${GRAY}Atrás${NC}"; bottom
+    read -r -p 'Selecciona una opción: ' op
+    case "$op" in
+      1) clear_screen; hextunnel status; pause_menu;; 2) clear_screen; hextunnel doctor || true; pause_menu;; 3) clear_screen; ss -lntup; pause_menu;;
+      4) clear_screen; command -v nft >/dev/null && nft list ruleset || iptables -S; pause_menu;; 5) clear_screen; uptime; free -h; df -h /; pause_menu;;
+      6) clear_screen; printf 'Actual: %s\n' "$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || true)"; confirm 'Activar BBR' && enable_bbr; pause_menu;;
+      7) clear_screen; journalctl -p err -n 100 --no-pager; pause_menu;; 8) clear_screen; hextunnel-license status; pause_menu;; 9) clear_screen; hextunnel-upgrade; pause_menu;; 0) return;;
+    esac
+  done
+}
+change_domain() {
+  local domain config=/etc/hextunnel/hextunnel.env tmp
+  read -r -p 'Nuevo dominio o IP: ' domain
+  [[ "$domain" =~ ^[A-Za-z0-9.-]+$ ]] || { printf 'Valor inválido.\n'; return 1; }
+  install -d -m 700 /etc/hextunnel; touch "$config"; chmod 600 "$config"
+  tmp="$(mktemp /tmp/hextunnel-domain.XXXXXX)"; awk '$0 !~ /^HEXTUNNEL_DOMAIN=/' "$config" > "$tmp"
+  printf 'HEXTUNNEL_DOMAIN=%q\n' "$domain" >> "$tmp"; install -m 600 "$tmp" "$config"; rm -f "$tmp"
+}
+advanced_menu() {
+  local op module
+  while true; do
+    clear_screen; top; title "${WHITE}${BOLD}CONFIGURACIÓN AVANZADA${NC}"; sep
+    item 1 'Cambiar dominio público'; item 2 'Instalar módulo'; item 3 'Desinstalar módulo'; item 4 'Estado de activación y reseller'
+    item 5 'Renovar autorización'; item 6 'Transacciones recientes'; item 7 'Ejecutar preflight'; item 8 'Desinstalar todos los módulos'; item 0 "${GRAY}Atrás${NC}"; bottom
+    read -r -p 'Selecciona una opción: ' op
+    case "$op" in
+      1) clear_screen; change_domain; pause_menu;;
+      2) printf 'Módulos: ssh xray hysteria hysteria2 zivpn webmin\n'; read -r -p 'Módulo: ' module; hextunnel install "$module" --no-reboot; pause_menu;;
+      3) read -r -p 'Módulo: ' module; confirm "Desinstalar $module" && hextunnel uninstall "$module"; pause_menu;;
+      4) clear_screen; hextunnel-license status; printf '\nReseller: '; hextunnel-license reseller; pause_menu;;
+      5) hextunnel-license renew; pause_menu;;
+      6) clear_screen; find /var/lib/hextunnel/transactions -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null | sort -r | head -n 20; pause_menu;;
+      7) clear_screen; hextunnel preflight ssh xray hysteria hysteria2 zivpn webmin; pause_menu;;
+      8) confirm 'Desinstalar todos los módulos' && hextunnel uninstall --all; pause_menu;; 0) return;;
+    esac
+  done
+}
+main_menu() {
+  local op
+  while true; do
+    clear_screen; header; printf '\n'; top; title "${WHITE}${BOLD}MENÚ PRINCIPAL${NC}"; sep
+    pair 01 'Cuentas SSH' 02 'Cuentas Xray'; pair 03 'Cuentas Hysteria' 04 'Cuentas Hysteria 2'
+    pair 05 'Cuentas ZiVPN' 06 'Conexiones activas'; pair 07 'Control de servicios' 08 'Backup y restaurar'
+    pair 09 'Utilidades' 10 'Configuración avanzada'; pair 11 'Reiniciar servidor' 12 'Actualizar Hex Tunnel'
+    pair 13 'Estado de licencia' 00 'Salir'; bottom; printf '\n'
+    read -r -p 'Selecciona una opción: ' op
+    case "$op" in
+      1|01) account_menu ssh SSH;; 2|02) xray_menu;; 3|03) account_menu hysteria HYSTERIA;; 4|04) account_menu hysteria2 'HYSTERIA 2';;
+      5|05) account_menu zivpn ZIVPN;; 6|06) connections_menu;; 7|07) services_menu;; 8|08) backup_menu;; 9|09) utilities_menu;; 10) advanced_menu;;
+      11) confirm 'Reiniciar el servidor ahora' && reboot;; 12) clear_screen; hextunnel-upgrade; pause_menu;;
+      13) clear_screen; hextunnel-license status; printf '\nReseller: '; hextunnel-license reseller; pause_menu;; 0|00) clear_screen; exit 0;;
+    esac
+  done
+}
+main_menu
