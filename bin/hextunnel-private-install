@@ -14,9 +14,12 @@ private_install_error() {
 ROOT="${HEXTUNNEL_PRIVATE_PACKAGE_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)}"
 
 if [[ "${HEXTUNNEL_OPERATION:-install}" == upgrade ]]; then
-  [[ -x "$ROOT/bin/hextunnel-private-upgrade" ]] \
-    || private_install_error "El paquete no contiene el actualizador privado."
-  exec bash "$ROOT/bin/hextunnel-private-upgrade" "$@"
+  private_updater="$ROOT/bin/hextunnel-private-upgrade"
+  [[ -f "$private_updater" && -r "$private_updater" ]] \
+    || private_install_error "El paquete no contiene un actualizador privado legible."
+  chmod 0700 "$private_updater" \
+    || private_install_error "No se pudieron restaurar los permisos del actualizador privado."
+  exec bash "$private_updater" "$@"
 fi
 
 architecture="$(uname -m)"
