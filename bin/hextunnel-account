@@ -26,14 +26,20 @@ hextunnel-account resume <protocolo> <usuario>
 hextunnel-account delete <protocolo> <usuario>
 hextunnel-account show <protocolo> <usuario>
 hextunnel-account list
+
+Al crear una cuenta SSH desde una terminal, Hex Tunnel solicita una contraseña
+visible y su confirmación. Para automatización puede definirse temporalmente:
+  HEXTUNNEL_ACCOUNT_SECRET='contraseña' hextunnel-account create ssh ...
 EOF
 }
 
 run_transactional_account_action() {
   local action="$1" label="$2"
   shift 2
+  firewall_prepare_backend
   transaction_begin "$label"
   trap 'transaction_fail "$?" "$BASH_LINENO" "$BASH_COMMAND"' ERR INT TERM
+  firewall_snapshot
   "$action" "$@"
   transaction_commit
   trap - ERR INT TERM
