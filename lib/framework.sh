@@ -7,6 +7,13 @@ else
   die "Falta el runtime de instalación: $HEXTUNNEL_ROOT/lib/install-runtime.sh"
 fi
 
+if [[ -r "$HEXTUNNEL_ROOT/lib/install-runtime-guards.sh" ]]; then
+  # shellcheck disable=SC1091
+  source "$HEXTUNNEL_ROOT/lib/install-runtime-guards.sh"
+else
+  die "Faltan las guardas del runtime: $HEXTUNNEL_ROOT/lib/install-runtime-guards.sh"
+fi
+
 if [[ -r "$HEXTUNNEL_ROOT/lib/network-policy.sh" ]]; then
   # shellcheck disable=SC1091
   source "$HEXTUNNEL_ROOT/lib/network-policy.sh"
