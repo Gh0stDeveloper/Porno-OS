@@ -7,6 +7,8 @@ trap 'rm -rf "$TMP"' EXIT
 
 mkdir -p "$TMP/mock-bin"
 touch "$TMP/dpkg-lock"
+mkdir -p "$TMP/test-tmp"
+chmod 700 "$TMP/test-tmp"
 
 cat > "$TMP/mock-bin/fuser" <<'EOF'
 #!/usr/bin/env bash
@@ -52,6 +54,7 @@ export MOCK_APT_LOG="$TMP/apt.log"
 export MOCK_DPKG_LOG="$TMP/dpkg.log"
 export MOCK_LOCK_FILE="$TMP/dpkg-lock"
 export HEXTUNNEL_APT_LOCK_FILES="$MOCK_LOCK_FILE"
+export HEXTUNNEL_TMP_DIR="$TMP/test-tmp"
 export HEXTUNNEL_ROOT="$ROOT"
 export HEXTUNNEL_DRY_RUN=0
 export HEXTUNNEL_APT_LOCK_TIMEOUT=37
@@ -73,6 +76,7 @@ package_manager_busy
 snapshot="$(package_manager_process_snapshot)"
 grep -Fq 'pid=24846' <<< "$snapshot"
 grep -Fq 'command=unattended-upgr' <<< "$snapshot"
+[[ "$(stat -c '%a' "$HEXTUNNEL_TMP_DIR")" == 1777 ]]
 
 export MOCK_PACKAGE_MANAGER_BUSY=0
 if package_manager_busy; then
@@ -81,8 +85,10 @@ if package_manager_busy; then
 fi
 [[ -z "$(package_manager_process_snapshot)" ]]
 
+chmod 700 "$HEXTUNNEL_TMP_DIR"
 run_cmd apt-get update
 run_cmd dpkg --configure -a
+[[ "$(stat -c '%a' "$HEXTUNNEL_TMP_DIR")" == 1777 ]]
 
 grep -Fq -- '-o DPkg::Lock::Timeout=37' "$MOCK_APT_LOG"
 grep -Fq -- '-o APT::Update::Lock::Timeout=37' "$MOCK_APT_LOG"
@@ -114,4 +120,4 @@ progress_output="$({
 grep -Fq '[FASE 1/2 | 0%] Iniciando SSH + TLS.' <<< "$progress_output"
 grep -Fq '[FASE 1/2 | 50%] SSH + TLS completado' <<< "$progress_output"
 
-printf 'package manager real-lock detection and install progress: ok\n'
+printf 'package manager real-lock, tmp repair and install progress: ok\n'
