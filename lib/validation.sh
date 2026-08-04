@@ -129,6 +129,9 @@ preflight_all() {
   command_exists curl || die "curl es obligatorio."
   command_exists ss || die "iproute2/ss es obligatorio."
   command_exists flock || die "util-linux/flock es obligatorio."
+  if declare -F cleanup_latest_rolled_back_services >/dev/null 2>&1; then
+    cleanup_latest_rolled_back_services
+  fi
   validate_operating_system
   validate_architecture
   if declare -F validate_module_architectures >/dev/null 2>&1; then
