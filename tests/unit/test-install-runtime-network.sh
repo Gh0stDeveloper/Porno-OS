@@ -18,6 +18,14 @@ export HEXTUNNEL_DRY_RUN=0
 
 # shellcheck disable=SC1091
 source "$ROOT/lib/install-runtime.sh"
+# shellcheck disable=SC1091
+source "$ROOT/lib/install-runtime-guards.sh"
+
+unset SSH_CONNECTION || true
+if ipv6_ssh_session_active; then
+  echo 'missing SSH_CONNECTION was incorrectly detected as IPv6' >&2
+  exit 1
+fi
 
 SSH_CONNECTION='2001:db8::10 12345 2001:db8::20 22'
 ipv6_ssh_session_active
@@ -26,6 +34,16 @@ if ipv6_ssh_session_active; then
   echo 'IPv4 SSH session was incorrectly detected as IPv6' >&2
   exit 1
 fi
+
+HEXTUNNEL_DRY_RUN=1
+HEXTUNNEL_PREFETCH_STARTED=0
+artifact_prefetch_xray() {
+  printf 'unexpected\n' > "$TMP/dry-run-prefetch-called"
+}
+artifact_prefetch_selected_modules xray
+[[ "$HEXTUNNEL_PREFETCH_STARTED" == 0 ]]
+[[ ! -e "$TMP/dry-run-prefetch-called" ]]
+HEXTUNNEL_DRY_RUN=0
 
 printf 'verified parallel artifact\n' > "$TMP/source.bin"
 expected="$(sha256sum "$TMP/source.bin" | awk '{print $1}')"
