@@ -10,6 +10,8 @@ SOURCE_FILE="${HEXTUNNEL_WARP_SOURCE_FILE:-/etc/apt/sources.list.d/cloudflare-cl
 KEYRING_FILE="${HEXTUNNEL_WARP_KEYRING_FILE:-/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg}"
 STATE_DIR="${HEXTUNNEL_WARP_STATE_DIR:-/var/lib/hextunnel/warp}"
 PROXY_PORT="${HEXTUNNEL_WARP_PROXY_PORT:-40000}"
+WARP_WORK=''
+trap 'rm -rf "${WARP_WORK:-}"' EXIT
 
 warp_log_step() {
   if declare -F _hex_runtime_step >/dev/null 2>&1; then
@@ -159,11 +161,10 @@ configure_warp_proxy() {
 }
 
 install_warp() {
-  local work key_asc key_gpg codename status
-  work="$(mktemp -d /tmp/hextunnel-warp.XXXXXX)"
-  key_asc="$work/cloudflare.gpg"
-  key_gpg="$work/cloudflare-keyring.gpg"
-  trap 'rm -rf "${work:-}"' EXIT
+  local key_asc key_gpg codename status
+  WARP_WORK="$(mktemp -d /tmp/hextunnel-warp.XXXXXX)"
+  key_asc="$WARP_WORK/cloudflare.gpg"
+  key_gpg="$WARP_WORK/cloudflare-keyring.gpg"
 
   # Elimina de forma reversible cualquier repositorio incompleto dejado por un
   # intento anterior antes de que APT vuelva a procesar sus índices.
