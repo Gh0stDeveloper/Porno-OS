@@ -67,6 +67,130 @@ run_hidden_phase() {
   return "$status"
 }
 
+prepare_visual_runtime_env() {
+  local destination="$1"
+  cat > "$destination" <<'RUNTIME_ENV'
+if [[ "${HEXTUNNEL_VISUAL_MODE:-0}" == 1 ]]; then
+  HEXTUNNEL_RUNTIME_LOG="${HEXTUNNEL_RUNTIME_LOG:-/var/log/hextunnel_install.log}"
+  install -d -m 750 "$(dirname "$HEXTUNNEL_RUNTIME_LOG")"
+  touch "$HEXTUNNEL_RUNTIME_LOG"
+  chmod 640 "$HEXTUNNEL_RUNTIME_LOG" 2>/dev/null || true
+
+  exec 9>&2
+  exec 1>>"$HEXTUNNEL_RUNTIME_LOG"
+
+  export DEBIAN_FRONTEND=noninteractive
+  export APT_LISTCHANGES_FRONTEND=none
+  export NEEDRESTART_MODE=a
+
+  if [[ -t 9 && "${TERM:-dumb}" != dumb && -z "${NO_COLOR:-}" ]]; then
+    _HEX_CYAN=$'\033[1;36m'
+    _HEX_GREEN=$'\033[1;32m'
+    _HEX_RED=$'\033[1;31m'
+    _HEX_RESET=$'\033[0m'
+  else
+    _HEX_CYAN=''; _HEX_GREEN=''; _HEX_RED=''; _HEX_RESET=''
+  fi
+
+  _hex_runtime_step() {
+    printf '%s[•]%s %s\n' "$_HEX_CYAN" "$_HEX_RESET" "$*" >&9
+  }
+
+  _hex_runtime_ok() {
+    printf '%s[✓]%s %s\n' "$_HEX_GREEN" "$_HEX_RESET" "$*" >&9
+  }
+
+  _hex_runtime_fail() {
+    printf '%s[✗]%s %s\n' "$_HEX_RED" "$_HEX_RESET" "$*" >&9
+  }
+
+  apt-get() {
+    local status
+    _hex_runtime_step "Procesando paquetes del sistema"
+    command apt-get -o Dpkg::Use-Pty=0 "$@" >>"$HEXTUNNEL_RUNTIME_LOG" 2>&1
+    status=$?
+    if ((status == 0)); then
+      _hex_runtime_ok "Paquetes del sistema procesados"
+    else
+      _hex_runtime_fail "APT finalizó con código $status"
+    fi
+    return "$status"
+  }
+
+  apt() {
+    local status
+    _hex_runtime_step "Procesando paquetes del sistema"
+    command apt -o Dpkg::Use-Pty=0 "$@" >>"$HEXTUNNEL_RUNTIME_LOG" 2>&1
+    status=$?
+    if ((status == 0)); then
+      _hex_runtime_ok "Paquetes del sistema procesados"
+    else
+      _hex_runtime_fail "APT finalizó con código $status"
+    fi
+    return "$status"
+  }
+
+  dpkg() {
+    local status
+    _hex_runtime_step "Configurando paquetes instalados"
+    command dpkg "$@" >>"$HEXTUNNEL_RUNTIME_LOG" 2>&1
+    status=$?
+    ((status == 0)) || _hex_runtime_fail "DPKG finalizó con código $status"
+    return "$status"
+  }
+
+  systemctl() {
+    local action="${1:-}" unit="${*: -1}"
+    case "$action" in
+      start|restart|reload|enable|disable)
+        _hex_runtime_step "Configurando servicio $unit"
+        ;;
+      daemon-reload)
+        _hex_runtime_step "Actualizando servicios de systemd"
+        ;;
+    esac
+    command systemctl "$@"
+  }
+
+  _hex_runtime_firewall_command() {
+    local binary="$1" previous='' argument='' port='' action='' target=''
+    shift
+    for argument in "$@"; do
+      [[ "$previous" == --dport ]] && port="$argument"
+      [[ "$argument" == -I || "$argument" == -A ]] && action="$argument"
+      [[ "$previous" == -j ]] && target="$argument"
+      previous="$argument"
+    done
+    if [[ -n "$action" && "$target" == ACCEPT && -n "$port" ]]; then
+      _hex_runtime_step "Abriendo puerto $port"
+    fi
+    command "$binary" "$@"
+  }
+
+  iptables() {
+    _hex_runtime_firewall_command iptables "$@"
+  }
+
+  ip6tables() {
+    _hex_runtime_firewall_command ip6tables "$@"
+  }
+
+  git() {
+    local action="${1:-}" status
+    if [[ "$action" == clone || "$action" == fetch || "$action" == pull ]]; then
+      _hex_runtime_step "Descargando componente verificado"
+      command git "$@" >>"$HEXTUNNEL_RUNTIME_LOG" 2>&1
+      status=$?
+      ((status == 0)) || _hex_runtime_fail "Git finalizó con código $status"
+      return "$status"
+    fi
+    command git "$@"
+  }
+fi
+RUNTIME_ENV
+  chmod 700 "$destination"
+}
+
 [[ "${EUID:-$(id -u)}" -eq 0 ]] || private_install_error "La instalación privada debe ejecutarse como root."
 [[ "${HEXTUNNEL_LICENSE_PREVALIDATED:-0}" == 1 ]] \
   || private_install_error "El paquete privado solo puede ejecutarse después de validar la licencia."
@@ -139,7 +263,9 @@ export HEXTUNNEL_PACKAGE_ROOT="$ROOT"
 run_hidden_phase 1 6 "Revisando sistema y puertos" bash "$PREFLIGHT"
 
 runtime_installer="$(mktemp /tmp/hextunnel-original.XXXXXX.sh)"
-trap 'rm -f "${runtime_installer:-}"' EXIT
+runtime_env="$(mktemp /tmp/hextunnel-runtime-env.XXXXXX.sh)"
+trap 'rm -f "${runtime_installer:-}" "${runtime_env:-}"' EXIT
+prepare_visual_runtime_env "$runtime_env"
 run_hidden_phase 2 6 "Preparando componentes verificados" \
   bash "$PREPARER" "$LEGACY_INSTALLER" "$runtime_installer" licensed
 
@@ -147,7 +273,8 @@ unset HEXTUNNEL_LICENSE_KEY
 export HEXTUNNEL_NO_REBOOT=1
 export HEXTUNNEL_VISUAL_MODE=1
 private_ui_phase 3 6 "Instalando servicios y configuraciones"
-if bash "$runtime_installer" "$@"; then
+if BASH_ENV="$runtime_env" HEXTUNNEL_RUNTIME_LOG=/var/log/hextunnel_install.log \
+  bash "$runtime_installer" "$@"; then
   private_ui_ok "Servicios y configuraciones instalados"
 else
   status=$?
@@ -162,7 +289,7 @@ run_hidden_phase 5 6 "Instalando activación y actualización segura" \
 
 private_ui_phase 6 6 "Finalizando instalación"
 trap - EXIT
-rm -f "$runtime_installer"
+rm -f "$runtime_installer" "$runtime_env"
 
 if [[ -x /usr/local/bin/menu ]]; then
   private_ui_ok "Hex Tunnel quedó instalado correctamente"
