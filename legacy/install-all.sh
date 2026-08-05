@@ -375,7 +375,7 @@ ln -fs /usr/share/zoneinfo/$MyVPS_Time /etc/localtime
 
 cat > /root/.profile <<'EOF_PROFILE'
 clear
-echo "Script Por JotchuaDevz"
+echo "Script Por JotchuaDevz • Gh0stDeveloper"
 echo "Escribe 'menu' Para Ver Los Comandos"
 EOF_PROFILE
 
@@ -406,6 +406,8 @@ cat <<'deekay77' > /etc/zorro-luffy
 <font color="blue"> x No Phishing<br></font>
 <font color="#A810FF"> x No Hacking<br></font><br>
 <font color="red">• BROUGHT TO YOU BY <br></font><font color="#00cccc">https://t.me/RequestLab_X_Canal !<br></font>
+<font color="red">• BROUGHT TO YOU BY <br></font><font color="#00cccc">https://t.me/GhostDev !<br></font>
+<font color="white">@JotchuaDevz • @Gh0stDeveloper<br></font><br>
 deekay77
 
 
