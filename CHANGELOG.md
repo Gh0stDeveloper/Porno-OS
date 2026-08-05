@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.0-rc.17 — 2026-08-05
+
+- El preflight AMD64 reconoce como compatible UDP 53 ocupado por `systemd-resolved` únicamente cuando todos sus listeners están limitados a `127.0.0.53` o `127.0.0.54`.
+- La validación de conflictos analiza todas las líneas devueltas por `ss`; un listener wildcard, público, mixto o perteneciente a otro proceso continúa bloqueando la instalación.
+- SlowDNS deja de enlazarse a `0.0.0.0:53` y utiliza la IPv4 asignada a la interfaz de salida del VPS.
+- La configuración heredada de dnsdist adopta el mismo enlace por interfaz, permitiendo convivir con los stubs locales de Ubuntu.
+- `systemd-resolved` permanece activo y `/etc/resolv.conf` continúa administrado por el sistema.
+- La dirección DNS puede fijarse mediante `HEXTUNNEL_DNS_LISTEN_ADDRESS`, pero debe ser una IPv4 no-loopback asignada localmente.
+- Se amplían las pruebas para cubrir listeners DNS válidos, wildcard, propietarios incorrectos y combinaciones mixtas, además del runtime saneado resultante.
+
 ## 1.0.0-rc.16 — 2026-08-04
 
 - El preflight AMD64 reconoce como válidos los listeners TCP 22 y 299 administrados por `sshd` o `systemd`, conservando el acceso SSH durante la instalación.
