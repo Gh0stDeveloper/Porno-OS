@@ -166,7 +166,7 @@ $0 == "chmod 666 /etc/slowdns/server.pub" { print "chmod 644 /etc/slowdns/server
 $0 == "chown root:root /var/log; chmod 755 /var/log; chown syslog:adm /var/log/syslog; chmod 640 /var/log/syslog" {
   syslog_guard++
   print "chown root:root /var/log; chmod 755 /var/log"
-  print "if [[ -e /var/log/syslog ]]; then chown syslog:adm /var/log/syslog; chmod 640 /var/log/syslog; fi"
+  print "if [[ -e /var/log/syslog ]]; then chown syslog:adm /var/log/syslog && chmod 640 /var/log/syslog; fi"
   next
 }
 $0 ~ /^[[:space:]]*SlowDNS_Listen=\":53\"[[:space:]]*$/ {
