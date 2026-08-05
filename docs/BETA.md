@@ -1,4 +1,4 @@
-# Hex Tunnel 1.0.0-rc.19 — prueba privada
+# Hex Tunnel 1.0.0-rc.20 — prueba privada
 
 Esta prueba valida instalación comercial, activación permanente, reseller, renovación, actualización privada, menú administrativo y compatibilidad AMD64/ARM64 antes de declarar estable la distribución.
 
@@ -48,6 +48,10 @@ El perfil ARM64 instala SSH/TLS, Xray, Hysteria v1, Hysteria 2, ZiVPN, Webmin, m
 - `rc.19`: `/tmp` se repara como `root:root 1777` antes de usar APT, DPKG o componentes temporales.
 - `rc.19`: WARP, Sing-box y BadVPN utilizan un ejecutor único que espera locks reales y no termina `unattended-upgrades`.
 - `rc.19`: DPKG reintenta únicamente una carrera confirmada de lock, conservando errores reales de instalación.
+- `rc.20`: la fuente APT de Cloudflare usa el formato oficial `signed-by` sin depender de `dpkg --print-architecture`.
+- `rc.20`: el modo visual ya no puede generar una entrada vacía `arch=` al redirigir la salida de `dpkg` al registro.
+- `rc.20`: la validación del repositorio muestra el error completo de APT antes de retirar una fuente rechazada.
+- `rc.20`: la instalación de `cloudflare-warp` y la configuración del proxy devuelven diagnósticos explícitos por etapa.
 
 El instalador nunca elimina archivos lock ni termina procesos de APT/DPKG para forzar acceso. El rollback cancela descargas anticipadas, apaga servicios nuevos, restaura firewall, archivos administrados, estados originales y el estado runtime previo de IPv6.
 
@@ -107,13 +111,13 @@ Se acepta que aparezcan los stubs `127.0.0.53/54:53` junto con SlowDNS o dnsdist
 
 ## Recuperación de Cloudflare WARP y APT
 
-Una instalación `rc.17` interrumpida puede dejar esta fuente con una clave anterior o incompleta:
+Una instalación anterior interrumpida puede dejar esta fuente con una clave anterior, incompleta o una opción `arch=` inválida:
 
 ```text
 /etc/apt/sources.list.d/cloudflare-client.list
 ```
 
-`rc.18` la respalda antes de retirarla y vuelve a comprobar APT. El helper mantenido admite:
+`rc.20` la respalda antes de retirarla y vuelve a comprobar APT. El helper mantenido admite:
 
 ```bash
 sudo /opt/hextunnel/bin/hextunnel-cloudflare-warp cleanup
@@ -121,7 +125,13 @@ sudo /opt/hextunnel/bin/hextunnel-cloudflare-warp repair
 sudo /opt/hextunnel/bin/hextunnel-cloudflare-warp install
 ```
 
-La instalación no debe utilizar `apt-key`, `trusted=yes` ni continuar después de un fallo de firma. Comprobaciones posteriores:
+La instalación no debe utilizar `apt-key`, `trusted=yes` ni continuar después de un fallo de firma. La fuente válida debe contener exactamente:
+
+```text
+deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ noble main
+```
+
+Comprobaciones posteriores:
 
 ```bash
 sudo apt-get update
@@ -133,11 +143,11 @@ sudo systemctl is-active warp-svc
 sudo ss -lntp 'sport = :40000'
 ```
 
-El fingerprint de la clave debe terminar en `6E2DD2174FA1C3BA`. Si la firma del repositorio no puede validarse, la fuente de Cloudflare debe desaparecer y `apt-get update` debe volver a funcionar con los repositorios restantes.
+El fingerprint de la clave debe terminar en `6E2DD2174FA1C3BA`. Si la firma del repositorio no puede validarse, la fuente de Cloudflare debe desaparecer, el error completo de APT debe mostrarse y `apt-get update` debe volver a funcionar con los repositorios restantes.
 
 ## Recuperación de `/tmp` y locks DPKG
 
-Una instalación `rc.18` interrumpida puede haber dejado `/tmp` con modo `0700`. Antes de reanudar, el estado correcto es:
+Una instalación anterior interrumpida puede haber dejado `/tmp` con modo `0700`. Antes de reanudar, el estado correcto es:
 
 ```bash
 sudo chown root:root /tmp
@@ -151,7 +161,7 @@ Salida esperada:
 root:root 1777 /tmp
 ```
 
-`rc.19` vuelve a comprobar y reparar ese estado antes de cada operación protegida. Si `unattended-upgrades` posee un lock real, el instalador espera y muestra el PID; no elimina el lock ni termina el proceso.
+`rc.20` vuelve a comprobar y reparar ese estado antes de cada operación protegida. Si `unattended-upgrades` posee un lock real, el instalador espera y muestra el PID; no elimina el lock ni termina el proceso.
 
 Solo debe aparecer una espera APT cuando un proceso posea realmente uno de estos locks:
 
@@ -252,7 +262,7 @@ Los artefactos verificados permanecen en `/var/cache/hextunnel/artifacts` durant
 
 ## Actualización comercial
 
-Cuando `1.0.0-rc.19` sea la release activa:
+Cuando `1.0.0-rc.20` sea la release activa:
 
 ```bash
 sudo hextunnel-upgrade
@@ -308,6 +318,7 @@ Comprobar:
 - Hysteria v1, Hysteria 2 y ZiVPN operativos.
 - UDP 53 del túnel enlazado a la IPv4 de la interfaz y `systemd-resolved` activo únicamente en loopback.
 - Cloudflare WARP activo y con proxy local en TCP 40000 cuando Hysteria v1 lo utilice.
+- La fuente de Cloudflare usa `signed-by` y no contiene una opción `arch=` vacía.
 - APT sin repositorios rotos ni errores `NO_PUBKEY`.
 - `/tmp` conserva propietario `root:root` y modo `1777`.
 - No quedan locks huérfanos ni procesos de APT/DPKG terminados por el instalador.

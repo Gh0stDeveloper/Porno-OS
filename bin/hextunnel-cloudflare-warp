@@ -141,13 +141,20 @@ validate_downloaded_key() {
 }
 
 write_repository() {
-  local codename="$1" source_tmp
+  local codename="$1" source_tmp expected
   install -d -m 0755 "$(dirname "$SOURCE_FILE")"
   source_tmp="$(mktemp "$(dirname "$SOURCE_FILE")/.cloudflare-client.list.XXXXXX")"
-  printf 'deb [arch=%s signed-by=%s] %s/ %s main\n' \
-    "$(dpkg --print-architecture)" "$KEYRING_FILE" "$REPO_URL" "$codename" > "$source_tmp"
+
+  # Cloudflare's official APT format intentionally omits an explicit arch=
+  # option. This also avoids command substitution through the visual dpkg()
+  # wrapper, whose output is redirected to the installation log.
+  expected="deb [signed-by=$KEYRING_FILE] $REPO_URL/ $codename main"
+  printf '%s\n' "$expected" > "$source_tmp"
   chmod 0644 "$source_tmp"
   mv -f -- "$source_tmp" "$SOURCE_FILE"
+
+  grep -Fqx "$expected" "$SOURCE_FILE" \
+    || warp_die "No se pudo escribir una fuente APT válida en $SOURCE_FILE."
 }
 
 wait_for_warp_service() {
@@ -174,18 +181,23 @@ wait_for_proxy_listener() {
 
 configure_warp_proxy() {
   warp_log_step 'Configurando Cloudflare WARP como proxy local'
-  systemctl enable --now warp-svc
+  systemctl enable --now warp-svc \
+    || warp_die 'No se pudo habilitar e iniciar warp-svc.'
   wait_for_warp_service || warp_die 'warp-svc inició, pero warp-cli no respondió dentro del tiempo esperado.'
 
   if ! warp-cli --accept-tos registration show >/dev/null 2>&1; then
-    warp-cli --accept-tos registration new
+    warp-cli --accept-tos registration new \
+      || warp_die 'Cloudflare WARP no pudo registrar este servidor.'
   fi
 
   warp-cli --accept-tos tunnel protocol set MASQUE >/dev/null 2>&1 \
     || warp_log_warn 'No se pudo fijar MASQUE explícitamente; se conservará el protocolo predeterminado de WARP.'
-  warp-cli --accept-tos mode proxy
-  warp-cli --accept-tos proxy port "$PROXY_PORT"
-  warp-cli --accept-tos connect
+  warp-cli --accept-tos mode proxy \
+    || warp_die 'No se pudo activar el modo proxy de Cloudflare WARP.'
+  warp-cli --accept-tos proxy port "$PROXY_PORT" \
+    || warp_die "No se pudo configurar el puerto proxy $PROXY_PORT."
+  warp-cli --accept-tos connect \
+    || warp_die 'Cloudflare WARP no pudo iniciar la conexión.'
 
   wait_for_proxy_listener \
     || warp_die "WARP no abrió el proxy local esperado en 127.0.0.1:$PROXY_PORT."
@@ -193,22 +205,26 @@ configure_warp_proxy() {
 }
 
 install_warp() {
-  local key_asc key_gpg codename status
+  local key_asc key_gpg codename status apt_log
   prepare_shared_tmp
   WARP_WORK="$(mktemp -d "$TMP_DIR/hextunnel-warp.XXXXXX")"
   key_asc="$WARP_WORK/cloudflare.gpg"
   key_gpg="$WARP_WORK/cloudflare-keyring.gpg"
+  apt_log="$WARP_WORK/cloudflare-apt-update.log"
 
   apt_recover
 
   warp_log_step 'Instalando dependencias de Cloudflare WARP'
-  run_package_manager apt-get install -y ca-certificates curl gnupg lsb-release
+  run_package_manager apt-get install -y ca-certificates curl gnupg lsb-release \
+    || warp_die 'APT no pudo instalar las dependencias requeridas por Cloudflare WARP.'
 
   warp_log_step 'Descargando y verificando la clave oficial de Cloudflare'
   curl --proto '=https' --tlsv1.2 --fail --silent --show-error \
-    --location --retry 3 --retry-delay 2 "$KEY_URL" -o "$key_asc"
+    --location --retry 3 --retry-delay 2 "$KEY_URL" -o "$key_asc" \
+    || warp_die 'No se pudo descargar la clave oficial de Cloudflare.'
   validate_downloaded_key "$key_asc"
-  gpg --batch --yes --dearmor --output "$key_gpg" "$key_asc"
+  gpg --batch --yes --dearmor --output "$key_gpg" "$key_asc" \
+    || warp_die 'No se pudo convertir la clave de Cloudflare al keyring de APT.'
   install -d -m 0755 "$(dirname "$KEYRING_FILE")"
   install -m 0644 "$key_gpg" "$KEYRING_FILE"
 
@@ -216,17 +232,30 @@ install_warp() {
   write_repository "$codename"
 
   warp_log_step 'Validando el repositorio oficial de Cloudflare'
-  if run_package_manager apt-get update; then
-    :
+  if run_package_manager apt-get update \
+      > >(tee -a "$apt_log") \
+      2> >(tee -a "$apt_log" >&2); then
+    warp_log_ok 'Repositorio oficial de Cloudflare validado'
   else
     status=$?
     warp_log_warn 'El repositorio de Cloudflare no superó la validación de APT; se retirará para no dañar futuras actualizaciones.'
     remove_managed_repository
     run_package_manager apt-get update || true
-    return "$status"
+    if [[ -s "$apt_log" ]]; then
+      printf 'Detalles de la validación APT de Cloudflare:\n' >&2
+      printf '%s\n' '────────────────────────────────────────────────────────────' >&2
+      cat "$apt_log" >&2
+      printf '%s\n' '────────────────────────────────────────────────────────────' >&2
+    fi
+    warp_die "APT rechazó el repositorio oficial de Cloudflare (código $status)."
   fi
 
-  run_package_manager apt-get install -y cloudflare-warp
+  if run_package_manager apt-get install -y cloudflare-warp; then
+    :
+  else
+    status=$?
+    warp_die "APT no pudo instalar cloudflare-warp (código $status)."
+  fi
   command -v warp-cli >/dev/null 2>&1 || warp_die 'cloudflare-warp terminó de instalarse, pero warp-cli no existe.'
   command -v ss >/dev/null 2>&1 || warp_die 'No se encontró ss para validar el proxy local de WARP.'
   configure_warp_proxy
