@@ -90,6 +90,7 @@ architecture="$(uname -m)"
 private_ui_step "Arquitectura detectada: $architecture"
 case "$architecture" in
   aarch64|arm64)
+    private_ui_step "Arquitectura ARM64 detectada"
     [[ -f "$ROOT/install.sh" ]] || private_install_error "El paquete no contiene el instalador modular."
     [[ -f "$ROOT/bin/hextunnel-arm64-menu" ]] || private_install_error "El paquete no contiene el menú ARM64."
     [[ -f "$ROOT/bin/hextunnel-install-license-runtime" ]] \
