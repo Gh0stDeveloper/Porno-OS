@@ -28,13 +28,14 @@ required=(
   bin/hextunnel-legacy-preflight bin/hextunnel-finalize-install
   bin/hextunnel-private-install bin/hextunnel-private-upgrade bin/hextunnel-beta-install
   bin/hextunnel-license bin/hextunnel-install-license-runtime
-  bin/hextunnel-install-locked-component bin/hextunnel-slipstream-compat
+  bin/hextunnel-install-locked-component bin/hextunnel-package-manager bin/hextunnel-slipstream-compat
   bin/hextunnel-cloudflare-warp bin/hextunnel-recover-legacy-partial
   lib/install-runtime.sh lib/install-runtime-guards.sh lib/network-policy.sh
   lib/account-display.sh lib/account-runtime-guards.sh
   docs/ARCHITECTURE.md docs/BETA.md docs/OPERATIONS.md docs/RECOVERY.md docs/PRIVATE_DISTRIBUTION.md
   scripts/build-release.sh scripts/resolve-component-lock.sh scripts/prepare-legacy-runtime.sh
   tests/unit/test-runtime-config-readonly.sh tests/unit/test-package-manager-lock.sh
+  tests/unit/test-package-manager-command.sh
   tests/unit/test-install-runtime-network.sh tests/unit/test-rollback-service-quiesce.sh
   tests/unit/test-network-policy-config-format.sh tests/unit/test-menu-parity.sh
   tests/unit/test-legacy-port-conflict.sh tests/unit/test-cloudflare-warp.sh
@@ -84,6 +85,7 @@ run_step current-tree bash tests/security/test-current-tree.sh
 run_step core bash tests/unit/test-core.sh
 run_step runtime-config-readonly bash tests/unit/test-runtime-config-readonly.sh
 run_step package-manager-lock bash tests/unit/test-package-manager-lock.sh
+run_step package-manager-command bash tests/unit/test-package-manager-command.sh
 run_step legacy-port-conflict bash tests/unit/test-legacy-port-conflict.sh
 run_step cloudflare-warp bash tests/unit/test-cloudflare-warp.sh
 run_step legacy-partial-recovery bash tests/unit/test-legacy-partial-recovery.sh
@@ -138,6 +140,7 @@ for packaged in \
   bin/hextunnel-private-upgrade \
   bin/hextunnel-install-license-runtime \
   bin/hextunnel-arm64-menu \
+  bin/hextunnel-package-manager \
   bin/hextunnel-cloudflare-warp \
   bin/hextunnel-recover-legacy-partial \
   lib/install-runtime-guards.sh \
