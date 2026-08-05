@@ -71,8 +71,8 @@ EOF_GPG
 cat > "$FAKEBIN/dpkg" <<'EOF_DPKG'
 #!/usr/bin/env bash
 if [[ "${1:-}" == --print-architecture ]]; then
-  printf 'amd64\n'
-  exit 0
+  printf 'unexpected dpkg --print-architecture\n' >> "$HEXTUNNEL_TEST_COMMAND_LOG"
+  exit 91
 fi
 printf 'dpkg %s\n' "$*" >> "$HEXTUNNEL_TEST_COMMAND_LOG"
 exit 0
@@ -154,8 +154,10 @@ run_root env \
 [[ -s "$SOURCE_FILE" && -s "$KEYRING_FILE" ]]
 run_root test -s "$STATE_DIR/state.env"
 [[ "$(stat -c '%a' "$TEST_TMP")" == 1777 ]]
-grep -Fq "signed-by=$KEYRING_FILE" "$SOURCE_FILE"
-grep -Fq 'https://pkg.cloudflareclient.com/ noble main' "$SOURCE_FILE"
+expected_source="deb [signed-by=$KEYRING_FILE] https://pkg.cloudflareclient.com/ noble main"
+grep -Fqx "$expected_source" "$SOURCE_FILE"
+! grep -Eq '\[arch=[[:space:]]' "$SOURCE_FILE"
+! grep -Fq 'unexpected dpkg --print-architecture' "$LOG"
 run_root grep -Eq 'apt-get .*install -y cloudflare-warp' "$LOG"
 run_root grep -Fq 'DPkg::Lock::Timeout=' "$LOG"
 run_root grep -Fq 'systemctl enable --now warp-svc' "$LOG"
@@ -167,5 +169,9 @@ if grep -Eq 'apt-key|trusted=yes' "$HELPER"; then
   echo 'el helper WARP no debe eludir la verificación criptográfica de APT' >&2
   exit 1
 fi
+if grep -Fq 'dpkg --print-architecture' "$HELPER"; then
+  echo 'el helper WARP no debe depender de la salida del wrapper visual de dpkg' >&2
+  exit 1
+fi
 
-printf 'Cloudflare WARP repository recovery, tmp repair and guarded proxy setup: ok\n'
+printf 'Cloudflare WARP official source format, tmp repair and guarded proxy setup: ok\n'
