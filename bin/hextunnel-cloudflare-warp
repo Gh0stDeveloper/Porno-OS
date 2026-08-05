@@ -43,7 +43,7 @@ require_root() {
 backup_file() {
   local path="$1" label="$2" stamp destination
   [[ -e "$path" ]] || return 0
-  stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  stamp="$(date -u +%Y%m%dT%H%M%SZ)-$$"
   install -d -m 0700 "$STATE_DIR/backups"
   destination="$STATE_DIR/backups/${label}.${stamp}"
   cp -a -- "$path" "$destination"
@@ -64,9 +64,15 @@ remove_managed_repository() {
   fi
 }
 
-apt_recover() {
-  warp_log_step 'Restaurando el estado de APT sin el repositorio inválido de Cloudflare'
+cleanup_stale_repository() {
+  warp_log_step 'Retirando configuraciones incompletas de Cloudflare WARP'
   remove_managed_repository
+  warp_log_ok 'Repositorio temporal de Cloudflare preparado'
+}
+
+apt_recover() {
+  cleanup_stale_repository
+  warp_log_step 'Comprobando que APT continúe operativo'
   apt-get update
   warp_log_ok 'APT volvió a un estado utilizable'
 }
@@ -100,6 +106,7 @@ validate_downloaded_key() {
 
 write_repository() {
   local codename="$1" source_tmp
+  install -d -m 0755 "$(dirname "$SOURCE_FILE")"
   source_tmp="$(mktemp "$(dirname "$SOURCE_FILE")/.cloudflare-client.list.XXXXXX")"
   printf 'deb [arch=%s signed-by=%s] %s/ %s main\n' \
     "$(dpkg --print-architecture)" "$KEYRING_FILE" "$REPO_URL" "$codename" > "$source_tmp"
@@ -152,11 +159,11 @@ configure_warp_proxy() {
 }
 
 install_warp() {
-  local work key_asc key_gpg codename status=0
+  local work key_asc key_gpg codename status
   work="$(mktemp -d /tmp/hextunnel-warp.XXXXXX)"
   key_asc="$work/cloudflare.gpg"
   key_gpg="$work/cloudflare-keyring.gpg"
-  trap 'rm -rf "${work:-}"' RETURN
+  trap 'rm -rf "${work:-}"' EXIT
 
   # Elimina de forma reversible cualquier repositorio incompleto dejado por un
   # intento anterior antes de que APT vuelva a procesar sus índices.
@@ -170,19 +177,21 @@ install_warp() {
     --location --retry 3 --retry-delay 2 "$KEY_URL" -o "$key_asc"
   validate_downloaded_key "$key_asc"
   gpg --batch --yes --dearmor --output "$key_gpg" "$key_asc"
-  install -d -m 0755 "$(dirname "$KEYRING_FILE")" "$(dirname "$SOURCE_FILE")"
+  install -d -m 0755 "$(dirname "$KEYRING_FILE")"
   install -m 0644 "$key_gpg" "$KEYRING_FILE"
 
   codename="$(resolve_codename)"
   write_repository "$codename"
 
   warp_log_step 'Validando el repositorio oficial de Cloudflare'
-  if ! apt-get update; then
+  if apt-get update; then
+    :
+  else
     status=$?
     warp_log_warn 'El repositorio de Cloudflare no superó la validación de APT; se retirará para no dañar futuras actualizaciones.'
     remove_managed_repository
     apt-get update || true
-    return "${status:-1}"
+    return "$status"
   fi
 
   apt-get install -y cloudflare-warp
@@ -199,6 +208,9 @@ install_warp() {
 
 require_root
 case "$ACTION" in
+  cleanup)
+    cleanup_stale_repository
+    ;;
   repair)
     apt_recover
     ;;
@@ -206,6 +218,6 @@ case "$ACTION" in
     install_warp
     ;;
   *)
-    warp_die 'Uso: hextunnel-cloudflare-warp {repair|install}'
+    warp_die 'Uso: hextunnel-cloudflare-warp {cleanup|repair|install}'
     ;;
 esac
