@@ -25,17 +25,58 @@ EOF
 
 legacy_all_dependencies() { :; }
 
+legacy_all_openssh_listeners() {
+  local listeners="$1" line found=0
+
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    found=1
+    [[ "$line" == *sshd* || "$line" == *systemd* ]] || return 1
+  done <<< "$listeners"
+
+  ((found == 1))
+}
+
+legacy_all_resolved_loopback_listeners() {
+  local listeners="$1" line found=0
+
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    found=1
+
+    # Ubuntu systemd-resolved uses only its local stub listeners. A public or
+    # wildcard listener must remain a hard conflict because Hex Tunnel needs
+    # the interface address on UDP 53 for SlowDNS/dnsdist.
+    [[ "$line" == *systemd-resolv* ]] || return 1
+    [[ "$line" =~ 127\.0\.0\.(53|54)(%lo)?:53([[:space:]]|$) ]] || return 1
+  done <<< "$listeners"
+
+  ((found == 1))
+}
+
 # A clean Ubuntu/Debian VPS normally has OpenSSH listening on tcp/22 through
 # sshd directly or through systemd socket activation. Hex Tunnel preserves that
 # listener and later configures sshd on ports 22 and 299, so it is not a port
 # conflict. Port 299 is also accepted when a previous/retried installation has
 # already added it to OpenSSH.
+#
+# Ubuntu also runs systemd-resolved on 127.0.0.53/54:53. The sanitized runtime
+# binds the DNS tunnel to the VPS interface address instead of 0.0.0.0, so the
+# local resolver can remain active without occupying the public DNS listener.
 legacy_all_allow_port_conflict() {
   local protocol="$1" port="$2" owner="$3"
 
-  [[ "$protocol" == tcp ]] || return 1
-  [[ "$port" == 22 || "$port" == 299 ]] || return 1
-  [[ "$owner" == *sshd* || "$owner" == *systemd* ]]
+  if [[ "$protocol" == tcp && ("$port" == 22 || "$port" == 299) ]]; then
+    legacy_all_openssh_listeners "$owner"
+    return
+  fi
+
+  if [[ "$protocol" == udp && "$port" == 53 ]]; then
+    legacy_all_resolved_loopback_listeners "$owner"
+    return
+  fi
+
+  return 1
 }
 
 legacy_all_install() {
