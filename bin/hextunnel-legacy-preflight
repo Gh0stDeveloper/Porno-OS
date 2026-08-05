@@ -3,6 +3,21 @@ set -Eeuo pipefail
 umask 077
 
 [[ "${EUID:-$(id -u)}" -eq 0 ]] || { echo "ERROR: el preflight debe ejecutarse como root." >&2; exit 1; }
+
+ROOT="${HEXTUNNEL_PACKAGE_ROOT:-${HEXTUNNEL_PRIVATE_PACKAGE_ROOT:-${HEXTUNNEL_BETA_PACKAGE_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)}}}"
+[[ -f "$ROOT/lib/common.sh" ]] || { echo "ERROR: paquete Hex Tunnel incompleto." >&2; exit 1; }
+
+WARP_RECOVERY="$ROOT/bin/hextunnel-cloudflare-warp"
+LEGACY_RECOVERY="$ROOT/bin/hextunnel-recover-legacy-partial"
+[[ -f "$WARP_RECOVERY" && -f "$LEGACY_RECOVERY" ]] \
+  || { echo "ERROR: el paquete no contiene las herramientas de recuperación previa." >&2; exit 1; }
+
+# Estos pasos se ejecutan antes de cualquier apt-get. Una instalación anterior
+# puede haber dejado una fuente de Cloudflare sin keyring y servicios heredados
+# escuchando en los puertos que el preflight debe volver a validar.
+bash "$WARP_RECOVERY" cleanup
+bash "$LEGACY_RECOVERY" stop
+
 missing=0
 for command in curl jq openssl ss flock systemctl; do
   command -v "$command" >/dev/null 2>&1 || missing=1
@@ -15,9 +30,6 @@ if ((missing == 1)); then
     curl jq openssl ca-certificates iproute2 util-linux
 fi
 unset missing command
-
-ROOT="${HEXTUNNEL_PACKAGE_ROOT:-${HEXTUNNEL_PRIVATE_PACKAGE_ROOT:-${HEXTUNNEL_BETA_PACKAGE_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)}}}"
-[[ -f "$ROOT/lib/common.sh" ]] || { echo "ERROR: paquete Hex Tunnel incompleto." >&2; exit 1; }
 
 for file in common logging backup rollback systemd firewall nat secrets validation modules; do
   # shellcheck disable=SC1090
