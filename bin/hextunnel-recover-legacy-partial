@@ -1,0 +1,165 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+ACTION="${1:-stop}"
+FINAL_MARKER="${HEXTUNNEL_LEGACY_FINAL_MARKER:-/var/lib/hextunnel/modules/legacy-all}"
+INSTALL_MODE_FILE="${HEXTUNNEL_INSTALL_MODE_FILE:-/etc/hextunnel/install-mode.env}"
+RECOVERY_DIR="${HEXTUNNEL_LEGACY_RECOVERY_DIR:-/var/lib/hextunnel/recovery}"
+SYSTEMCTL_BIN="${HEXTUNNEL_SYSTEMCTL_BIN:-systemctl}"
+MIN_EVIDENCE="${HEXTUNNEL_PARTIAL_MIN_EVIDENCE:-3}"
+
+legacy_recovery_log() {
+  if declare -F _hex_runtime_step >/dev/null 2>&1; then
+    _hex_runtime_step "$*"
+  else
+    printf '[•] %s\n' "$*" >&2
+  fi
+}
+
+legacy_recovery_ok() {
+  if declare -F _hex_runtime_ok >/dev/null 2>&1; then
+    _hex_runtime_ok "$*"
+  else
+    printf '[✓] %s\n' "$*" >&2
+  fi
+}
+
+legacy_recovery_warn() {
+  printf '[!] %s\n' "$*" >&2
+}
+
+legacy_recovery_die() {
+  printf '[✗] %s\n' "$*" >&2
+  exit 1
+}
+
+require_root() {
+  [[ "${EUID:-$(id -u)}" -eq 0 ]] || legacy_recovery_die 'La recuperación de una instalación parcial requiere root.'
+}
+
+legacy_install_is_finalized() {
+  [[ -s "$FINAL_MARKER" ]] && return 0
+  [[ -s "$INSTALL_MODE_FILE" ]] \
+    && grep -Fq 'HEXTUNNEL_INSTALL_MODE=complete-sanitized-panel' "$INSTALL_MODE_FILE"
+}
+
+legacy_evidence_paths() {
+  if [[ -n "${HEXTUNNEL_PARTIAL_EVIDENCE_PATHS:-}" ]]; then
+    tr ':' '\n' <<< "$HEXTUNNEL_PARTIAL_EVIDENCE_PATHS"
+    return 0
+  fi
+
+  cat <<'EOF'
+/etc/zorro-luffy
+/etc/deekayvpn
+/etc/systemd/system/ws-proxy@.service
+/etc/systemd/system/server-sldns.service
+/etc/systemd/system/hysteria2-server.service
+/etc/systemd/system/udp-custom.service
+/etc/systemd/system/zivpn.service
+EOF
+}
+
+legacy_partial_evidence_count() {
+  local path count=0
+  while IFS= read -r path; do
+    [[ -n "$path" ]] || continue
+    [[ -e "$path" ]] && count=$((count + 1))
+  done < <(legacy_evidence_paths)
+  printf '%s' "$count"
+}
+
+legacy_partial_detected() {
+  local count
+  legacy_install_is_finalized && return 1
+  count="$(legacy_partial_evidence_count)"
+  [[ "$count" =~ ^[0-9]+$ ]] || return 1
+  ((count >= MIN_EVIDENCE))
+}
+
+legacy_managed_units() {
+  cat <<'EOF'
+ws-proxy@10080.service
+ws-proxy@25.service
+ws-proxy@2082.service
+ws-proxy@2086.service
+sslh.service
+stunnel4.service
+haproxy.service
+nginx.service
+squid.service
+server-sldns.service
+xray.service
+hysteria-server.service
+hysteria-nat.service
+hysteria2-server.service
+deekaystartup.service
+badvpn.service
+udp-custom.service
+zivpn.service
+zivpn-nat.service
+dnsdist.service
+slipstream.service
+danted.service
+EOF
+}
+
+legacy_stop_partial_units() {
+  local unit stopped_file timestamp stopped=0
+  timestamp="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  install -d -m 0700 "$RECOVERY_DIR"
+  stopped_file="$RECOVERY_DIR/legacy-partial-stopped.$timestamp"
+  : > "$stopped_file"
+  chmod 0600 "$stopped_file"
+
+  while IFS= read -r unit; do
+    [[ -n "$unit" ]] || continue
+    if "$SYSTEMCTL_BIN" is-active --quiet "$unit" 2>/dev/null; then
+      legacy_recovery_log "Deteniendo residuo de instalación parcial: $unit"
+      "$SYSTEMCTL_BIN" stop "$unit"
+      printf '%s\n' "$unit" >> "$stopped_file"
+      stopped=$((stopped + 1))
+    fi
+  done < <(legacy_managed_units)
+
+  "$SYSTEMCTL_BIN" reset-failed >/dev/null 2>&1 || true
+  if ((stopped == 0)); then
+    rm -f "$stopped_file"
+    legacy_recovery_ok 'No había servicios parciales activos que detener'
+  else
+    legacy_recovery_ok "Se detuvieron $stopped servicios parciales; SSH y systemd-resolved se conservaron"
+  fi
+}
+
+legacy_show_status() {
+  local count finalized=no partial=no
+  legacy_install_is_finalized && finalized=yes
+  legacy_partial_detected && partial=yes
+  count="$(legacy_partial_evidence_count)"
+  printf 'finalized=%s partial=%s evidence=%s required=%s\n' \
+    "$finalized" "$partial" "$count" "$MIN_EVIDENCE"
+}
+
+require_root
+case "$ACTION" in
+  detect)
+    legacy_show_status
+    legacy_partial_detected
+    ;;
+  stop)
+    if legacy_install_is_finalized; then
+      legacy_recovery_ok 'La instalación completa ya está finalizada; no se detendrán servicios'
+      exit 0
+    fi
+    if legacy_partial_detected; then
+      legacy_recovery_warn 'Se detectaron residuos de una instalación AMD64 interrumpida'
+      legacy_stop_partial_units
+    else
+      legacy_recovery_ok 'No se detectó una instalación parcial administrada'
+    fi
+    ;;
+  *)
+    legacy_recovery_die 'Uso: hextunnel-recover-legacy-partial {detect|stop}'
+    ;;
+esac
