@@ -20,7 +20,7 @@ load_runtime_config
 PACKAGE_MANAGER="${HEXTUNNEL_PACKAGE_MANAGER:-$ROOT/bin/hextunnel-package-manager}"
 TMP_DIR="${HEXTUNNEL_TMP_DIR:-/tmp}"
 
-[[ -x "$PACKAGE_MANAGER" ]] || locked_error "No se encontró el gestor de paquetes seguro: $PACKAGE_MANAGER"
+[[ -r "$PACKAGE_MANAGER" ]] || locked_error "No se encontró el gestor de paquetes seguro: $PACKAGE_MANAGER"
 
 prepare_shared_tmp() {
   local mode owner group repaired=0
@@ -51,7 +51,7 @@ prepare_shared_tmp() {
 }
 
 run_package_manager() {
-  "$PACKAGE_MANAGER" "$@"
+  bash "$PACKAGE_MANAGER" "$@"
 }
 
 locked_download() {
