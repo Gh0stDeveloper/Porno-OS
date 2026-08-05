@@ -25,6 +25,18 @@ EOF
 
 legacy_all_dependencies() { :; }
 
+legacy_all_openssh_listeners() {
+  local listeners="$1" line found=0
+
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    found=1
+    [[ "$line" == *sshd* || "$line" == *systemd* ]] || return 1
+  done <<< "$listeners"
+
+  ((found == 1))
+}
+
 legacy_all_resolved_loopback_listeners() {
   local listeners="$1" line found=0
 
@@ -55,7 +67,7 @@ legacy_all_allow_port_conflict() {
   local protocol="$1" port="$2" owner="$3"
 
   if [[ "$protocol" == tcp && ("$port" == 22 || "$port" == 299) ]]; then
-    [[ "$owner" == *sshd* || "$owner" == *systemd* ]]
+    legacy_all_openssh_listeners "$owner"
     return
   fi
 
