@@ -152,11 +152,11 @@ run_root env \
 run_root test -s "$STATE_DIR/state.env"
 grep -Fq "signed-by=$KEYRING_FILE" "$SOURCE_FILE"
 grep -Fq 'https://pkg.cloudflareclient.com/ noble main' "$SOURCE_FILE"
-grep -Fq 'apt-get install -y cloudflare-warp' "$LOG"
-grep -Fq 'systemctl enable --now warp-svc' "$LOG"
-grep -Fq 'warp-cli --accept-tos mode proxy' "$LOG"
-grep -Fq 'warp-cli --accept-tos proxy port 40000' "$LOG"
-grep -Fq 'warp-cli --accept-tos connect' "$LOG"
+run_root grep -Fq 'apt-get install -y cloudflare-warp' "$LOG"
+run_root grep -Fq 'systemctl enable --now warp-svc' "$LOG"
+run_root grep -Fq 'warp-cli --accept-tos mode proxy' "$LOG"
+run_root grep -Fq 'warp-cli --accept-tos proxy port 40000' "$LOG"
+run_root grep -Fq 'warp-cli --accept-tos connect' "$LOG"
 
 if grep -Eq 'apt-key|trusted=yes' "$HELPER"; then
   echo 'el helper WARP no debe eludir la verificación criptográfica de APT' >&2
