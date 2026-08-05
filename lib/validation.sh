@@ -110,14 +110,17 @@ validate_requested_ports() {
     module_is_installed "$module" && continue
     while read -r protocol port source scope; do
       [[ -n "$protocol" && -n "$port" ]] || continue
+      ui_step "Revisando puerto $protocol/$port"
       if port_is_listening "$protocol" "$port" "${scope:-any}"; then
         owner="$(port_listener_lines "$protocol" "$port" | head -n1)"
         if module_allows_existing_listener "$module" "$protocol" "$port" "$owner"; then
-          log_info "Puerto existente aceptado por $module: $protocol/$port"
+          ui_success "Puerto $protocol/$port conservado por OpenSSH/systemd"
           continue
         fi
         [[ "${HEXTUNNEL_FORCE:-0}" == 1 ]] || die "El puerto $protocol/$port ya está ocupado: ${owner:-proceso desconocido}."
         log_warn "Puerto ocupado permitido por --force: $protocol/$port"
+      else
+        ui_success "Puerto $protocol/$port disponible"
       fi
     done < <(module_call "$module" ports || true)
   done
