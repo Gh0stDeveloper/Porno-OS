@@ -18,6 +18,19 @@ function emit_header() {
   print "if [[ -r /etc/hextunnel/hextunnel.env ]]; then"
   print "  source /etc/hextunnel/hextunnel.env"
   print "fi"
+  print "hextunnel_dns_listen_address() {"
+  print "  local address=\"${HEXTUNNEL_DNS_LISTEN_ADDRESS:-}\" token previous=\"\""
+  print "  if [[ -z \"$address\" ]]; then"
+  print "    for token in $(ip -4 route get 1.1.1.1 2>/dev/null); do"
+  print "      if [[ \"$previous\" == src ]]; then address=\"$token\"; break; fi"
+  print "      previous=\"$token\""
+  print "    done"
+  print "  fi"
+  print "  [[ \"$address\" =~ ^([0-9]{1,3}\\.){3}[0-9]{1,3}$ ]] || { echo \"ERROR: no se pudo determinar una IPv4 local para UDP 53.\" >&2; exit 1; }"
+  print "  [[ \"$address\" != 0.0.0.0 && \"$address\" != 127.* ]] || { echo \"ERROR: la dirección DNS debe pertenecer a una interfaz no loopback.\" >&2; exit 1; }"
+  print "  ip -4 addr show | grep -Fq \"inet $address/\" || { echo \"ERROR: la IPv4 DNS $address no está asignada localmente.\" >&2; exit 1; }"
+  print "  printf \047%s\047 \"$address\""
+  print "}"
   print ": \"${HEXTUNNEL_SLOWDNS_BINARY_URL:?Falta URL bloqueada de SlowDNS}\""
   print ": \"${HEXTUNNEL_SLOWDNS_SHA256:?Falta SHA-256 bloqueado de SlowDNS}\""
   print ": \"${HEXTUNNEL_SINGBOX_BINARY_URL:?Falta URL bloqueada de sing-box}\""
@@ -32,6 +45,7 @@ function emit_header() {
 BEGIN {
   license=upgrade=resolved_stop=resolved_disable=resolv_rm=resolv_write=firewall_purge=0
   webmin=slowdns=singbox=badvpn=udp_binary=udp_config=zivpn=profile=menu_slip=region_check=0
+  dns_bind=dnsdist_bind=0
   skip_webmin=skip_profile=skip_badvpn=skip_menu_slip=0
 }
 NR == 1 { print; emit_header(); next }
@@ -76,6 +90,8 @@ skip_menu_slip {
     print "        pause_return; return"
     print "    fi"
     print "    if /usr/local/bin/hextunnel-slipstream-compat \"$SlipstreamDomain\" \"$current_ns\"; then"
+    print "        echo \"$SlipstreamDomain\" > /etc/deekayvpn/slipstream_domain.txt"
+    print "        chmod 600 /etc/deekayvpn/slipstream_domain.txt"
     print "        echo \"$SlipstreamDomain\" > /etc/deekayvpn/slipstream_domain.txt"
     print "        chmod 600 /etc/deekayvpn/slipstream_domain.txt"
     print "        echo \"SlipStream instalado mediante el módulo mantenido.\""
@@ -131,6 +147,16 @@ $0 == "PermitRootLogin yes" { print "PermitRootLogin prohibit-password"; next }
 $0 == "X11Forwarding yes" { print "X11Forwarding no"; next }
 $0 == "LogLevel QUIET" { print "LogLevel INFO"; next }
 $0 == "chmod 666 /etc/slowdns/server.pub" { print "chmod 644 /etc/slowdns/server.pub"; next }
+$0 ~ /^[[:space:]]*SlowDNS_Listen=\":53\"[[:space:]]*$/ {
+  dns_bind++
+  print "  SlowDNS_Listen=\"$(hextunnel_dns_listen_address):53\""
+  next
+}
+$0 ~ /^[[:space:]]*setLocal\(\"0\.0\.0\.0:53\"\)[[:space:]]*$/ {
+  dnsdist_bind++
+  print "setLocal(\"$(hextunnel_dns_listen_address):53\")"
+  next
+}
 $0 ~ /^[[:space:]]*chmod (644|666) \/root\/udp\/config\.json([[:space:]]|$)/ {
   print "chmod 600 /root/udp/config.json"; next
 }
@@ -194,6 +220,7 @@ END {
   if (resolv_rm != 1 || resolv_write != 1 || firewall_purge != 1) { print "ERROR: controles de red heredados no identificados" > "/dev/stderr"; bad=1 }
   if (webmin != 1 || profile != 1 || badvpn != 1 || menu_slip != 1 || region_check != 1) { print "ERROR: bloques heredados esperados no identificados" > "/dev/stderr"; bad=1 }
   if (slowdns != 1 || singbox != 1 || udp_binary != 1 || udp_config != 1 || zivpn != 1) { print "ERROR: descargas heredadas esperadas no identificadas" > "/dev/stderr"; bad=1 }
+  if (dns_bind != 1 || dnsdist_bind != 1) { print "ERROR: listeners DNS heredados no identificados" > "/dev/stderr"; bad=1 }
   if (bad) exit 42
 }
 ' "$SOURCE" > "$OUTPUT"
@@ -214,7 +241,9 @@ for forbidden in \
   'dropbox.com/.*/badvpn' \
   'chmod 644 /root/udp/config.json' \
   'chmod 644 /etc/zivpn/config.json' \
-  'chmod 644 /etc/hysteria/config.json'; do
+  'chmod 644 /etc/hysteria/config.json' \
+  'SlowDNS_Listen=":53"' \
+  'setLocal\("0\.0\.0\.0:53"\)'; do
   if grep -En "$forbidden" "$OUTPUT" >&2; then
     printf 'ERROR: el runtime heredado conserva un patrón prohibido: %s\n' "$forbidden" >&2
     exit 1
