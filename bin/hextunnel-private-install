@@ -58,8 +58,9 @@ run_hidden_phase() {
     private_ui_ok "$label"
     rm -f "$output"
     return 0
+  else
+    status=$?
   fi
-  status=$?
   private_ui_fail "$label"
   private_show_error_file "$output"
   rm -f "$output"
@@ -98,18 +99,18 @@ case "$architecture" in
     export HEXTUNNEL_PRIVATE_PACKAGE_ROOT="$ROOT"
     export HEXTUNNEL_NO_REBOOT=1
 
-    run_hidden_phase 1 6 "Revisando sistema y puertos" \
+    run_hidden_phase 1 3 "Revisando puertos e instalando módulos ARM64" \
       bash "$ROOT/install.sh" install \
         --modules=ssh,xray,hysteria,hysteria2,zivpn,webmin \
         --non-interactive \
         --no-reboot
 
-    private_ui_phase 5 6 "Instalando panel y activación"
+    private_ui_phase 2 3 "Instalando panel y activación"
     install -m 0755 "$ROOT/bin/hextunnel-arm64-menu" /usr/local/bin/menu
     bash /opt/hextunnel/bin/hextunnel-install-license-runtime
     private_ui_ok "Panel y activación instalados"
 
-    private_ui_phase 6 6 "Finalizando"
+    private_ui_phase 3 3 "Finalizando"
     private_ui_ok "Instalación ARM64 completada"
     printf '\n%sPanel:%s sudo menu\n' "$P_WHITE" "$P_RESET"
     printf '%sEstado:%s sudo hextunnel status\n' "$P_WHITE" "$P_RESET"
