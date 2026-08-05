@@ -46,7 +46,7 @@ function emit_header() {
 BEGIN {
   license=upgrade=resolved_stop=resolved_disable=resolv_rm=resolv_write=firewall_purge=0
   webmin=slowdns=singbox=badvpn=udp_binary=udp_config=zivpn=profile=menu_slip=region_check=0
-  dns_bind=dnsdist_bind=warp=fd3=0
+  dns_bind=dnsdist_bind=warp=fd3=syslog_guard=0
   skip_webmin=skip_profile=skip_badvpn=skip_menu_slip=skip_warp=0
 }
 NR == 1 { print; emit_header(); next }
@@ -163,6 +163,12 @@ $0 == "PermitRootLogin yes" { print "PermitRootLogin prohibit-password"; next }
 $0 == "X11Forwarding yes" { print "X11Forwarding no"; next }
 $0 == "LogLevel QUIET" { print "LogLevel INFO"; next }
 $0 == "chmod 666 /etc/slowdns/server.pub" { print "chmod 644 /etc/slowdns/server.pub"; next }
+$0 == "chown root:root /var/log; chmod 755 /var/log; chown syslog:adm /var/log/syslog; chmod 640 /var/log/syslog" {
+  syslog_guard++
+  print "chown root:root /var/log; chmod 755 /var/log"
+  print "if [[ -e /var/log/syslog ]]; then chown syslog:adm /var/log/syslog; chmod 640 /var/log/syslog; fi"
+  next
+}
 $0 ~ /^[[:space:]]*SlowDNS_Listen=\":53\"[[:space:]]*$/ {
   dns_bind++
   print "  SlowDNS_Listen=\"$(hextunnel_dns_listen_address):53\""
@@ -237,7 +243,7 @@ END {
   if (webmin != 1 || profile != 1 || badvpn != 1 || menu_slip != 1 || region_check != 1) { print "ERROR: bloques heredados esperados no identificados" > "/dev/stderr"; bad=1 }
   if (slowdns != 1 || singbox != 1 || udp_binary != 1 || udp_config != 1 || zivpn != 1) { print "ERROR: descargas heredadas esperadas no identificadas" > "/dev/stderr"; bad=1 }
   if (dns_bind != 1 || dnsdist_bind != 1) { print "ERROR: listeners DNS heredados no identificados" > "/dev/stderr"; bad=1 }
-  if (warp != 1 || fd3 != 1) { print "ERROR: saneamiento WARP/descriptor heredado no identificado" > "/dev/stderr"; bad=1 }
+  if (warp != 1 || fd3 != 1 || syslog_guard != 1) { print "ERROR: saneamiento WARP/descriptor/syslog heredado no identificado" > "/dev/stderr"; bad=1 }
   if (bad) exit 42
 }
 ' "$SOURCE" > "$OUTPUT"
@@ -263,6 +269,7 @@ for forbidden in \
   'setLocal\("0\.0\.0\.0:53"\)' \
   'pkg\.cloudflareclient\.com/pubkey\.gpg' \
   'warp-cli --accept-tos' \
+  'chown syslog:adm /var/log/syslog; chmod 640 /var/log/syslog' \
   '>&3'; do
   if grep -En "$forbidden" "$OUTPUT" >&2; then
     printf 'ERROR: el runtime heredado conserva un patrón prohibido: %s\n' "$forbidden" >&2
