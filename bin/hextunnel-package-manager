@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+pm_error() {
+  printf 'ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
+[[ "${EUID:-$(id -u)}" -eq 0 ]] \
+  || pm_error "El gestor de paquetes de Hex Tunnel requiere root."
+
+ROOT="${HEXTUNNEL_PACKAGE_ROOT:-${HEXTUNNEL_INSTALL_DIR:-/opt/hextunnel}}"
+[[ -f "$ROOT/lib/common.sh" ]] \
+  || ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+
+for library in common logging install-runtime install-runtime-guards; do
+  [[ -r "$ROOT/lib/$library.sh" ]] \
+    || pm_error "Falta el runtime requerido: $ROOT/lib/$library.sh"
+  # shellcheck disable=SC1090
+  source "$ROOT/lib/$library.sh"
+done
+
+init_logging
+HEXTUNNEL_DRY_RUN=0
+export HEXTUNNEL_DRY_RUN
+
+if [[ -r /etc/hextunnel/hextunnel.env ]]; then
+  # shellcheck disable=SC1091
+  source /etc/hextunnel/hextunnel.env
+fi
+
+package_manager_prepare_tmp
+
+command_name="${1:-}"
+[[ -n "$command_name" ]] || pm_error "Uso: hextunnel-package-manager {apt-get|apt|dpkg|apt-mark} [argumentos]"
+shift
+
+run_dpkg_with_lock_retry() {
+  local attempts="${HEXTUNNEL_DPKG_RETRY_ATTEMPTS:-5}"
+  local attempt status stderr_file
+
+  [[ "$attempts" =~ ^[0-9]+$ && "$attempts" -ge 1 ]] \
+    || pm_error "HEXTUNNEL_DPKG_RETRY_ATTEMPTS debe ser un entero positivo."
+
+  stderr_file="$(mktemp "${HEXTUNNEL_TMP_DIR:-/tmp}/hextunnel-dpkg.XXXXXX.log")"
+  trap 'rm -f "${stderr_file:-}"' RETURN
+
+  for ((attempt = 1; attempt <= attempts; attempt++)); do
+    package_manager_prepare_tmp
+    package_manager_wait
+    : > "$stderr_file"
+
+    set +e
+    command dpkg "$@" 2> >(tee "$stderr_file" >&2)
+    status=$?
+    set -e
+
+    ((status == 0)) && return 0
+
+    if grep -Eqi 'lock|another process|otro proceso|unable to acquire' "$stderr_file" \
+      || package_manager_busy; then
+      if ((attempt < attempts)); then
+        log_warn "DPKG encontró una carrera de lock; reintentando de forma segura ($attempt/$attempts)."
+        sleep "${HEXTUNNEL_APT_LOCK_POLL_INTERVAL:-5}"
+        continue
+      fi
+    fi
+
+    return "$status"
+  done
+
+  return 1
+}
+
+case "$command_name" in
+  apt-get|apt)
+    run_cmd "$command_name" "$@"
+    ;;
+  dpkg)
+    run_dpkg_with_lock_retry "$@"
+    ;;
+  apt-mark)
+    package_manager_prepare_tmp
+    package_manager_wait
+    command apt-mark "$@"
+    ;;
+  *)
+    pm_error "Comando no permitido: $command_name"
+    ;;
+esac
