@@ -2,9 +2,68 @@
 set -Eeuo pipefail
 umask 077
 
+private_ui_init() {
+  if [[ -t 2 && "${TERM:-dumb}" != dumb && -z "${NO_COLOR:-}" ]]; then
+    P_RESET=$'\033[0m'
+    P_CYAN=$'\033[1;36m'
+    P_GREEN=$'\033[1;32m'
+    P_YELLOW=$'\033[1;33m'
+    P_RED=$'\033[1;31m'
+    P_WHITE=$'\033[1;37m'
+    P_DIM=$'\033[2m'
+  else
+    P_RESET=''; P_CYAN=''; P_GREEN=''; P_YELLOW=''; P_RED=''; P_WHITE=''; P_DIM=''
+  fi
+}
+
+private_ui_init
+
+private_ui_header() {
+  printf '\n%s╭──────────────────────────────────────────────────────────╮%s\n' "$P_CYAN" "$P_RESET" >&2
+  printf '%s│%s %-56s %s│%s\n' "$P_CYAN" "$P_WHITE" "HEX TUNNEL · INSTALADOR SEGURO" "$P_CYAN" "$P_RESET" >&2
+  printf '%s╰──────────────────────────────────────────────────────────╯%s\n' "$P_CYAN" "$P_RESET" >&2
+}
+
+private_ui_step() { printf '%s[•]%s %s\n' "$P_CYAN" "$P_RESET" "$*" >&2; }
+private_ui_ok() { printf '%s[✓]%s %s\n' "$P_GREEN" "$P_RESET" "$*" >&2; }
+private_ui_warn() { printf '%s[!]%s %s\n' "$P_YELLOW" "$P_RESET" "$*" >&2; }
+private_ui_fail() { printf '%s[✗]%s %s\n' "$P_RED" "$P_RESET" "$*" >&2; }
+private_ui_phase() {
+  local current="$1" total="$2"
+  shift 2
+  printf '%s[•]%s Instalación parte %s[%s/%s]%s — %s\n' \
+    "$P_CYAN" "$P_RESET" "$P_WHITE" "$current" "$total" "$P_RESET" "$*" >&2
+}
+
+private_show_error_file() {
+  local path="${1:-}"
+  [[ -n "$path" && -s "$path" ]] || return 0
+  printf '\n%sDetalles completos del error:%s\n' "$P_RED" "$P_RESET" >&2
+  printf '%s────────────────────────────────────────────────────────────%s\n' "$P_RED" "$P_RESET" >&2
+  cat -- "$path" >&2
+  printf '%s────────────────────────────────────────────────────────────%s\n' "$P_RED" "$P_RESET" >&2
+}
+
 private_install_error() {
-  printf 'ERROR: %s\n' "$*" >&2
+  private_ui_fail "$*"
   exit 1
+}
+
+run_hidden_phase() {
+  local current="$1" total="$2" label="$3" output status
+  shift 3
+  output="$(mktemp /tmp/hextunnel-phase.XXXXXX.log)"
+  private_ui_phase "$current" "$total" "$label"
+  if "$@" >"$output" 2>&1; then
+    private_ui_ok "$label"
+    rm -f "$output"
+    return 0
+  fi
+  status=$?
+  private_ui_fail "$label"
+  private_show_error_file "$output"
+  rm -f "$output"
+  return "$status"
 }
 
 [[ "${EUID:-$(id -u)}" -eq 0 ]] || private_install_error "La instalación privada debe ejecutarse como root."
@@ -12,6 +71,10 @@ private_install_error() {
   || private_install_error "El paquete privado solo puede ejecutarse después de validar la licencia."
 
 ROOT="${HEXTUNNEL_PRIVATE_PACKAGE_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)}"
+
+private_ui_header
+private_ui_step "Iniciando instalación"
+private_ui_step "Paquete autorizado y firma verificadas"
 
 if [[ "${HEXTUNNEL_OPERATION:-install}" == upgrade ]]; then
   private_updater="$ROOT/bin/hextunnel-private-upgrade"
@@ -23,6 +86,7 @@ if [[ "${HEXTUNNEL_OPERATION:-install}" == upgrade ]]; then
 fi
 
 architecture="$(uname -m)"
+private_ui_step "Arquitectura detectada: $architecture"
 case "$architecture" in
   aarch64|arm64)
     [[ -f "$ROOT/install.sh" ]] || private_install_error "El paquete no contiene el instalador modular."
@@ -34,20 +98,23 @@ case "$architecture" in
     export HEXTUNNEL_PRIVATE_PACKAGE_ROOT="$ROOT"
     export HEXTUNNEL_NO_REBOOT=1
 
-    printf 'Arquitectura ARM64 detectada. Instalando el perfil nativo verificado...\n'
-    bash "$ROOT/install.sh" install \
-      --modules=ssh,xray,hysteria,hysteria2,zivpn,webmin \
-      --non-interactive \
-      --no-reboot
+    run_hidden_phase 1 6 "Revisando sistema y puertos" \
+      bash "$ROOT/install.sh" install \
+        --modules=ssh,xray,hysteria,hysteria2,zivpn,webmin \
+        --non-interactive \
+        --no-reboot
 
+    private_ui_phase 5 6 "Instalando panel y activación"
     install -m 0755 "$ROOT/bin/hextunnel-arm64-menu" /usr/local/bin/menu
     bash /opt/hextunnel/bin/hextunnel-install-license-runtime
+    private_ui_ok "Panel y activación instalados"
 
-    printf '\nInstalación ARM64 completada.\n'
-    printf 'Panel: sudo menu\n'
-    printf 'Estado: sudo hextunnel status\n'
-    printf 'Licencia: sudo hextunnel-license status\n'
-    printf 'Actualización: sudo hextunnel-upgrade\n'
+    private_ui_phase 6 6 "Finalizando"
+    private_ui_ok "Instalación ARM64 completada"
+    printf '\n%sPanel:%s sudo menu\n' "$P_WHITE" "$P_RESET"
+    printf '%sEstado:%s sudo hextunnel status\n' "$P_WHITE" "$P_RESET"
+    printf '%sActivación:%s sudo hextunnel-license status\n' "$P_WHITE" "$P_RESET"
+    printf '%sActualización:%s sudo hextunnel-upgrade\n' "$P_WHITE" "$P_RESET"
     exit 0
     ;;
   x86_64|amd64)
@@ -67,28 +134,43 @@ LICENSE_RUNTIME="$ROOT/bin/hextunnel-install-license-runtime"
   || private_install_error "El paquete privado no contiene las fases protegidas requeridas."
 
 export HEXTUNNEL_PACKAGE_ROOT="$ROOT"
-bash "$PREFLIGHT"
+run_hidden_phase 1 6 "Revisando sistema y puertos" bash "$PREFLIGHT"
 
 runtime_installer="$(mktemp /tmp/hextunnel-original.XXXXXX.sh)"
 trap 'rm -f "${runtime_installer:-}"' EXIT
-bash "$PREPARER" "$LEGACY_INSTALLER" "$runtime_installer" licensed
+run_hidden_phase 2 6 "Preparando componentes verificados" \
+  bash "$PREPARER" "$LEGACY_INSTALLER" "$runtime_installer" licensed
 
 unset HEXTUNNEL_LICENSE_KEY
 export HEXTUNNEL_NO_REBOOT=1
-bash "$runtime_installer" "$@"
-bash "$FINALIZER"
-bash /opt/hextunnel/bin/hextunnel-install-license-runtime
+export HEXTUNNEL_VISUAL_MODE=1
+private_ui_phase 3 6 "Instalando servicios y configuraciones"
+if bash "$runtime_installer" "$@"; then
+  private_ui_ok "Servicios y configuraciones instalados"
+else
+  status=$?
+  private_ui_fail "Falló la instalación de servicios y configuraciones"
+  private_show_error_file /var/log/hextunnel_install.log
+  exit "$status"
+fi
 
+run_hidden_phase 4 6 "Validando servicios y aplicando ajustes finales" bash "$FINALIZER"
+run_hidden_phase 5 6 "Instalando activación y actualización segura" \
+  bash /opt/hextunnel/bin/hextunnel-install-license-runtime
+
+private_ui_phase 6 6 "Finalizando instalación"
 trap - EXIT
 rm -f "$runtime_installer"
 
 if [[ -x /usr/local/bin/menu ]]; then
+  private_ui_ok "Hex Tunnel quedó instalado correctamente"
+  printf '%s[•]%s Panel: sudo menu\n' "$P_CYAN" "$P_RESET"
+  printf '%s[•]%s Estado: sudo hextunnel status\n' "$P_CYAN" "$P_RESET"
+  printf '%s[•]%s Activación: sudo hextunnel-license status\n' "$P_CYAN" "$P_RESET"
+  printf '%s[•]%s Actualización: sudo hextunnel-upgrade\n' "$P_CYAN" "$P_RESET"
   if [[ -t 0 && -t 1 ]]; then
     exec /usr/local/bin/menu
   fi
-  printf 'Instalación completada. Abre el panel con: sudo menu\n'
-  printf 'Estado de licencia: sudo hextunnel license status\n'
-  printf 'Actualización privada: sudo hextunnel upgrade\n'
   exit 0
 fi
 
