@@ -1,4 +1,4 @@
-# Hex Tunnel 1.0.0-rc.18 — prueba privada
+# Hex Tunnel 1.0.0-rc.19 — prueba privada
 
 Esta prueba valida instalación comercial, activación permanente, reseller, renovación, actualización privada, menú administrativo y compatibilidad AMD64/ARM64 antes de declarar estable la distribución.
 
@@ -44,6 +44,10 @@ El perfil ARM64 instala SSH/TLS, Xray, Hysteria v1, Hysteria 2, ZiVPN, Webmin, m
 - `rc.18`: si el repositorio de Cloudflare no supera la verificación de APT, se retira automáticamente y no queda bloqueando Webmin ni futuras actualizaciones.
 - `rc.18`: `warp-cli` solo se ejecuta después de instalar y validar `cloudflare-warp`; el proxy local debe quedar escuchando en `127.0.0.1:40000`.
 - `rc.18`: el runtime heredado deja de escribir en el descriptor cerrado `3`, eliminando el error `Bad file descriptor` durante el progreso visual.
+- `rc.19`: las descargas verificadas ya no reaplican modo `0700` sobre directorios existentes como `/tmp`.
+- `rc.19`: `/tmp` se repara como `root:root 1777` antes de usar APT, DPKG o componentes temporales.
+- `rc.19`: WARP, Sing-box y BadVPN utilizan un ejecutor único que espera locks reales y no termina `unattended-upgrades`.
+- `rc.19`: DPKG reintenta únicamente una carrera confirmada de lock, conservando errores reales de instalación.
 
 El instalador nunca elimina archivos lock ni termina procesos de APT/DPKG para forzar acceso. El rollback cancela descargas anticipadas, apaga servicios nuevos, restaura firewall, archivos administrados, estados originales y el estado runtime previo de IPv6.
 
@@ -130,6 +134,24 @@ sudo ss -lntp 'sport = :40000'
 ```
 
 El fingerprint de la clave debe terminar en `6E2DD2174FA1C3BA`. Si la firma del repositorio no puede validarse, la fuente de Cloudflare debe desaparecer y `apt-get update` debe volver a funcionar con los repositorios restantes.
+
+## Recuperación de `/tmp` y locks DPKG
+
+Una instalación `rc.18` interrumpida puede haber dejado `/tmp` con modo `0700`. Antes de reanudar, el estado correcto es:
+
+```bash
+sudo chown root:root /tmp
+sudo chmod 1777 /tmp
+stat -c '%U:%G %a %n' /tmp
+```
+
+Salida esperada:
+
+```text
+root:root 1777 /tmp
+```
+
+`rc.19` vuelve a comprobar y reparar ese estado antes de cada operación protegida. Si `unattended-upgrades` posee un lock real, el instalador espera y muestra el PID; no elimina el lock ni termina el proceso.
 
 Solo debe aparecer una espera APT cuando un proceso posea realmente uno de estos locks:
 
@@ -230,7 +252,7 @@ Los artefactos verificados permanecen en `/var/cache/hextunnel/artifacts` durant
 
 ## Actualización comercial
 
-Cuando `1.0.0-rc.18` sea la release activa:
+Cuando `1.0.0-rc.19` sea la release activa:
 
 ```bash
 sudo hextunnel-upgrade
@@ -248,6 +270,7 @@ bin/hextunnel-private-install
 bin/hextunnel-private-upgrade
 bin/hextunnel-license
 bin/hextunnel-install-license-runtime
+bin/hextunnel-package-manager
 bin/hextunnel-cloudflare-warp
 ```
 
@@ -286,6 +309,8 @@ Comprobar:
 - UDP 53 del túnel enlazado a la IPv4 de la interfaz y `systemd-resolved` activo únicamente en loopback.
 - Cloudflare WARP activo y con proxy local en TCP 40000 cuando Hysteria v1 lo utilice.
 - APT sin repositorios rotos ni errores `NO_PUBKEY`.
+- `/tmp` conserva propietario `root:root` y modo `1777`.
+- No quedan locks huérfanos ni procesos de APT/DPKG terminados por el instalador.
 - Listeners públicos en IPv4 cuando `HEXTUNNEL_DISABLE_IPV6=1`.
 - Stunnel, SSLH, Fail2ban y HAProxy activos cuando correspondan.
 - Cuentas con creación, suspensión, renovación, expiración y eliminación.

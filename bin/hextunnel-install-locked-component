@@ -17,11 +17,53 @@ source "$ROOT/lib/logging.sh"
 init_logging
 load_runtime_config
 
+PACKAGE_MANAGER="${HEXTUNNEL_PACKAGE_MANAGER:-$ROOT/bin/hextunnel-package-manager}"
+TMP_DIR="${HEXTUNNEL_TMP_DIR:-/tmp}"
+
+[[ -r "$PACKAGE_MANAGER" ]] || locked_error "No se encontró el gestor de paquetes seguro: $PACKAGE_MANAGER"
+
+prepare_shared_tmp() {
+  local mode owner group repaired=0
+
+  if [[ ! -d "$TMP_DIR" ]]; then
+    install -d -m 1777 "$TMP_DIR"
+    repaired=1
+  fi
+
+  mode="$(stat -c '%a' "$TMP_DIR" 2>/dev/null || printf unknown)"
+  if [[ "$mode" != 1777 ]]; then
+    chmod 1777 "$TMP_DIR" || locked_error "No se pudieron restaurar los permisos 1777 de $TMP_DIR."
+    repaired=1
+  fi
+
+  if [[ "$TMP_DIR" == /tmp ]]; then
+    owner="$(stat -c '%U' "$TMP_DIR" 2>/dev/null || printf unknown)"
+    group="$(stat -c '%G' "$TMP_DIR" 2>/dev/null || printf unknown)"
+    if [[ "$owner" != root || "$group" != root ]]; then
+      chown root:root "$TMP_DIR" || locked_error "No se pudo restaurar root:root en /tmp."
+      repaired=1
+    fi
+  fi
+
+  if ((repaired == 1)); then
+    log_warn "Se restauró $TMP_DIR con permisos compartidos 1777 antes de instalar el componente."
+  fi
+}
+
+run_package_manager() {
+  bash "$PACKAGE_MANAGER" "$@"
+}
+
 locked_download() {
-  local url="$1" expected="$2" output="$3" actual
+  local url="$1" expected="$2" output="$3" actual parent
   [[ "$url" == https://* ]] || locked_error "La URL del componente debe usar HTTPS."
   [[ "$expected" =~ ^[0-9a-fA-F]{64}$ ]] || locked_error "El componente no tiene un SHA-256 bloqueado."
-  install -d -m 700 "$(dirname "$output")"
+
+  parent="$(dirname "$output")"
+  if [[ ! -d "$parent" ]]; then
+    install -d -m 700 "$parent"
+  fi
+
   curl -fL --retry 4 --retry-all-errors --connect-timeout 15 --max-time 300 -o "$output" "$url"
   [[ -s "$output" ]] || locked_error "La descarga del componente está vacía."
   actual="$(sha256sum "$output" | awk '{print tolower($1)}')"
@@ -30,7 +72,8 @@ locked_download() {
 
 install_slowdns() {
   local tmp
-  tmp="$(mktemp /tmp/hextunnel-slowdns.XXXXXX)"
+  prepare_shared_tmp
+  tmp="$(mktemp "$TMP_DIR/hextunnel-slowdns.XXXXXX")"
   trap 'rm -f "${tmp:-}"' RETURN
   locked_download "${HEXTUNNEL_SLOWDNS_BINARY_URL:-}" "${HEXTUNNEL_SLOWDNS_SHA256:-}" "$tmp"
   install -d -m 700 /etc/slowdns
@@ -39,19 +82,21 @@ install_slowdns() {
 
 install_sing_box() {
   local tmp
-  tmp="$(mktemp /tmp/hextunnel-sing-box.XXXXXX.deb)"
+  prepare_shared_tmp
+  tmp="$(mktemp "$TMP_DIR/hextunnel-sing-box.XXXXXX.deb")"
   trap 'rm -f "${tmp:-}"' RETURN
   locked_download "${HEXTUNNEL_SINGBOX_BINARY_URL:-}" "${HEXTUNNEL_SINGBOX_SHA256:-}" "$tmp"
-  dpkg -i "$tmp" || apt-get install -f -y
+  run_package_manager dpkg -i "$tmp" || run_package_manager apt-get install -f -y
   command -v sing-box >/dev/null 2>&1 || locked_error "sing-box no quedó instalado."
-  apt-mark hold sing-box >/dev/null 2>&1 || true
+  run_package_manager apt-mark hold sing-box >/dev/null 2>&1 || true
 }
 
 install_badvpn() {
   local work archive source build
-  apt-get update -y
-  apt-get install -y --no-install-recommends cmake make gcc libc6-dev tar ca-certificates
-  work="$(mktemp -d /tmp/hextunnel-badvpn.XXXXXX)"
+  run_package_manager apt-get update -y
+  run_package_manager apt-get install -y --no-install-recommends cmake make gcc libc6-dev tar ca-certificates
+  prepare_shared_tmp
+  work="$(mktemp -d "$TMP_DIR/hextunnel-badvpn.XXXXXX")"
   trap 'rm -rf "${work:-}"' RETURN
   archive="$work/source.tar.gz"
   locked_download "${HEXTUNNEL_BADVPN_SOURCE_URL:-}" "${HEXTUNNEL_BADVPN_SHA256:-}" "$archive"
@@ -70,7 +115,8 @@ install_badvpn() {
 
 install_udp_custom() {
   local tmp
-  tmp="$(mktemp /tmp/hextunnel-udp-custom.XXXXXX)"
+  prepare_shared_tmp
+  tmp="$(mktemp "$TMP_DIR/hextunnel-udp-custom.XXXXXX")"
   trap 'rm -f "${tmp:-}"' RETURN
   locked_download "${HEXTUNNEL_UDP_CUSTOM_BINARY_URL:-}" "${HEXTUNNEL_UDP_CUSTOM_SHA256:-}" "$tmp"
   install -d -m 700 /root/udp
@@ -82,7 +128,8 @@ install_udp_custom() {
 
 install_zivpn() {
   local tmp
-  tmp="$(mktemp /tmp/hextunnel-zivpn.XXXXXX)"
+  prepare_shared_tmp
+  tmp="$(mktemp "$TMP_DIR/hextunnel-zivpn.XXXXXX")"
   trap 'rm -f "${tmp:-}"' RETURN
   locked_download "${HEXTUNNEL_ZIVPN_BINARY_URL:-}" "${HEXTUNNEL_ZIVPN_SHA256:-}" "$tmp"
   install -m 755 "$tmp" /usr/local/bin/zivpn

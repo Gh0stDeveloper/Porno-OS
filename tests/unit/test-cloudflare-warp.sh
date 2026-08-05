@@ -7,6 +7,7 @@ HELPER="$ROOT/bin/hextunnel-cloudflare-warp"
 WORK="$(mktemp -d /tmp/hextunnel-warp-test.XXXXXX)"
 FAKEBIN="$WORK/bin"
 LOG="$WORK/commands.log"
+TEST_TMP="$WORK/tmp"
 
 cleanup() {
   if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
@@ -20,7 +21,8 @@ cleanup() {
 trap cleanup EXIT
 
 bash -n "$HELPER"
-mkdir -p "$FAKEBIN" "$WORK/etc/apt/sources.list.d" "$WORK/usr/share/keyrings" "$WORK/state"
+mkdir -p "$FAKEBIN" "$WORK/etc/apt/sources.list.d" "$WORK/usr/share/keyrings" "$WORK/state" "$TEST_TMP"
+chmod 700 "$TEST_TMP"
 
 cat > "$FAKEBIN/apt-get" <<'EOF_APT'
 #!/usr/bin/env bash
@@ -142,6 +144,7 @@ rm -f "$SOURCE_FILE"
 run_root env \
   PATH="$FAKEBIN:$PATH" \
   HEXTUNNEL_TEST_COMMAND_LOG="$LOG" \
+  HEXTUNNEL_TMP_DIR="$TEST_TMP" \
   HEXTUNNEL_WARP_CODENAME=noble \
   HEXTUNNEL_WARP_SOURCE_FILE="$SOURCE_FILE" \
   HEXTUNNEL_WARP_KEYRING_FILE="$KEYRING_FILE" \
@@ -150,9 +153,11 @@ run_root env \
 
 [[ -s "$SOURCE_FILE" && -s "$KEYRING_FILE" ]]
 run_root test -s "$STATE_DIR/state.env"
+[[ "$(stat -c '%a' "$TEST_TMP")" == 1777 ]]
 grep -Fq "signed-by=$KEYRING_FILE" "$SOURCE_FILE"
 grep -Fq 'https://pkg.cloudflareclient.com/ noble main' "$SOURCE_FILE"
-run_root grep -Fq 'apt-get install -y cloudflare-warp' "$LOG"
+run_root grep -Eq 'apt-get .*install -y cloudflare-warp' "$LOG"
+run_root grep -Fq 'DPkg::Lock::Timeout=' "$LOG"
 run_root grep -Fq 'systemctl enable --now warp-svc' "$LOG"
 run_root grep -Fq 'warp-cli --accept-tos mode proxy' "$LOG"
 run_root grep -Fq 'warp-cli --accept-tos proxy port 40000' "$LOG"
@@ -163,4 +168,4 @@ if grep -Eq 'apt-key|trusted=yes' "$HELPER"; then
   exit 1
 fi
 
-printf 'Cloudflare WARP repository recovery and verified proxy setup: ok\n'
+printf 'Cloudflare WARP repository recovery, tmp repair and guarded proxy setup: ok\n'

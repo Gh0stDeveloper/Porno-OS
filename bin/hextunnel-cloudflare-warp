@@ -3,6 +3,9 @@ set -Eeuo pipefail
 umask 077
 
 ACTION="${1:-install}"
+ROOT="${HEXTUNNEL_PACKAGE_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)}"
+PACKAGE_MANAGER="${HEXTUNNEL_PACKAGE_MANAGER:-$ROOT/bin/hextunnel-package-manager}"
+TMP_DIR="${HEXTUNNEL_TMP_DIR:-/tmp}"
 REPO_URL="${HEXTUNNEL_WARP_REPO_URL:-https://pkg.cloudflareclient.com}"
 KEY_URL="${HEXTUNNEL_WARP_KEY_URL:-https://pkg.cloudflareclient.com/pubkey.gpg}"
 KEY_ID="${HEXTUNNEL_WARP_KEY_ID:-6E2DD2174FA1C3BA}"
@@ -42,6 +45,37 @@ require_root() {
   [[ "${EUID:-$(id -u)}" -eq 0 ]] || warp_die 'La reparación de Cloudflare WARP requiere root.'
 }
 
+prepare_shared_tmp() {
+  local mode owner group repaired=0
+
+  if [[ ! -d "$TMP_DIR" ]]; then
+    install -d -m 1777 "$TMP_DIR"
+    repaired=1
+  fi
+
+  mode="$(stat -c '%a' "$TMP_DIR" 2>/dev/null || printf unknown)"
+  if [[ "$mode" != 1777 ]]; then
+    chmod 1777 "$TMP_DIR" || warp_die "No se pudieron restaurar los permisos 1777 de $TMP_DIR."
+    repaired=1
+  fi
+
+  if [[ "$TMP_DIR" == /tmp ]]; then
+    owner="$(stat -c '%U' "$TMP_DIR" 2>/dev/null || printf unknown)"
+    group="$(stat -c '%G' "$TMP_DIR" 2>/dev/null || printf unknown)"
+    if [[ "$owner" != root || "$group" != root ]]; then
+      chown root:root "$TMP_DIR" || warp_die 'No se pudo restaurar root:root en /tmp.'
+      repaired=1
+    fi
+  fi
+
+  ((repaired == 0)) || warp_log_warn "Se restauró $TMP_DIR con permisos compartidos 1777 antes de usar APT."
+}
+
+run_package_manager() {
+  [[ -r "$PACKAGE_MANAGER" ]] || warp_die "No se encontró el gestor de paquetes seguro: $PACKAGE_MANAGER"
+  bash "$PACKAGE_MANAGER" "$@"
+}
+
 backup_file() {
   local path="$1" label="$2" stamp destination
   [[ -e "$path" ]] || return 0
@@ -75,7 +109,7 @@ cleanup_stale_repository() {
 apt_recover() {
   cleanup_stale_repository
   warp_log_step 'Comprobando que APT continúe operativo'
-  apt-get update
+  run_package_manager apt-get update
   warp_log_ok 'APT volvió a un estado utilizable'
 }
 
@@ -147,8 +181,6 @@ configure_warp_proxy() {
     warp-cli --accept-tos registration new
   fi
 
-  # Las versiones actuales usan MASQUE para el modo de proxy local. Si el
-  # cliente ya lo tiene como valor predeterminado, el comando puede ser un no-op.
   warp-cli --accept-tos tunnel protocol set MASQUE >/dev/null 2>&1 \
     || warp_log_warn 'No se pudo fijar MASQUE explícitamente; se conservará el protocolo predeterminado de WARP.'
   warp-cli --accept-tos mode proxy
@@ -162,16 +194,15 @@ configure_warp_proxy() {
 
 install_warp() {
   local key_asc key_gpg codename status
-  WARP_WORK="$(mktemp -d /tmp/hextunnel-warp.XXXXXX)"
+  prepare_shared_tmp
+  WARP_WORK="$(mktemp -d "$TMP_DIR/hextunnel-warp.XXXXXX")"
   key_asc="$WARP_WORK/cloudflare.gpg"
   key_gpg="$WARP_WORK/cloudflare-keyring.gpg"
 
-  # Elimina de forma reversible cualquier repositorio incompleto dejado por un
-  # intento anterior antes de que APT vuelva a procesar sus índices.
   apt_recover
 
   warp_log_step 'Instalando dependencias de Cloudflare WARP'
-  apt-get install -y ca-certificates curl gnupg lsb-release
+  run_package_manager apt-get install -y ca-certificates curl gnupg lsb-release
 
   warp_log_step 'Descargando y verificando la clave oficial de Cloudflare'
   curl --proto '=https' --tlsv1.2 --fail --silent --show-error \
@@ -185,17 +216,17 @@ install_warp() {
   write_repository "$codename"
 
   warp_log_step 'Validando el repositorio oficial de Cloudflare'
-  if apt-get update; then
+  if run_package_manager apt-get update; then
     :
   else
     status=$?
     warp_log_warn 'El repositorio de Cloudflare no superó la validación de APT; se retirará para no dañar futuras actualizaciones.'
     remove_managed_repository
-    apt-get update || true
+    run_package_manager apt-get update || true
     return "$status"
   fi
 
-  apt-get install -y cloudflare-warp
+  run_package_manager apt-get install -y cloudflare-warp
   command -v warp-cli >/dev/null 2>&1 || warp_die 'cloudflare-warp terminó de instalarse, pero warp-cli no existe.'
   command -v ss >/dev/null 2>&1 || warp_die 'No se encontró ss para validar el proxy local de WARP.'
   configure_warp_proxy
@@ -213,6 +244,7 @@ case "$ACTION" in
     cleanup_stale_repository
     ;;
   repair)
+    prepare_shared_tmp
     apt_recover
     ;;
   install)
