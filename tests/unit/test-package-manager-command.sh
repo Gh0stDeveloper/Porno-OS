@@ -117,7 +117,8 @@ run_root grep -Eq '(^|[[:space:]])update($|[[:space:]])' "$APT_LOG"
 
 run_root env "${common_env[@]}" bash "$HELPER" dpkg --configure -a
 run_root grep -Fq 'dpkg --configure -a' "$DPKG_LOG"
-[[ "$(run_root wc -l < "$DPKG_LOG" | tr -d ' ')" -eq 2 ]]
+dpkg_lines="$(run_root wc -l "$DPKG_LOG" | awk '{print $1}')"
+[[ "$dpkg_lines" -eq 2 ]]
 
 if grep -Fq 'install -d -m 700 "$(dirname "$output")"' "$LOCKED_COMPONENT"; then
   echo 'locked_download todavía puede convertir /tmp en 0700' >&2
