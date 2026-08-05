@@ -27,7 +27,7 @@ for mode in beta licensed; do
   grep -Fq 'hextunnel-cloudflare-warp" cleanup' "$output"
   grep -Fq 'hextunnel-cloudflare-warp" install || exit $?' "$output"
   grep -Fq 'Instalando paquetes necesarios (esto tarda unos minutos)' "$output"
-  grep -Fq 'if [[ -e /var/log/syslog ]]; then chown syslog:adm /var/log/syslog; chmod 640 /var/log/syslog; fi' "$output"
+  grep -Fq 'if [[ -e /var/log/syslog ]]; then chown syslog:adm /var/log/syslog && chmod 640 /var/log/syslog; fi' "$output"
 
   if grep -Eq 'apt-get upgrade|chmod 777|ssl=0|raw\.githubusercontent\.com/.*/main/|sh\.rustup\.rs.*\|.*sh|dropbox\.com/.*/badvpn|SlowDNS_Listen=":53"|setLocal\("0\.0\.0\.0:53"\)|pkg\.cloudflareclient\.com/pubkey\.gpg|warp-cli --accept-tos|^chown root:root /var/log; chmod 755 /var/log; chown syslog:adm /var/log/syslog; chmod 640 /var/log/syslog$|>&3' "$output"; then
     echo "runtime $mode conserva un patrón prohibido" >&2
