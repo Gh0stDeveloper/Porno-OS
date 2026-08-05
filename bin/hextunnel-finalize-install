@@ -7,6 +7,12 @@ finalize_error() {
   exit 1
 }
 
+read_optional_state_value() {
+  local path="${1:-}"
+  [[ -n "$path" && -r "$path" ]] || return 0
+  tr -d '\r\n' 2>/dev/null < "$path" || true
+}
+
 [[ "${EUID:-$(id -u)}" -eq 0 ]] || finalize_error "La finalización debe ejecutarse como root."
 ROOT="${HEXTUNNEL_PACKAGE_ROOT:-${HEXTUNNEL_PRIVATE_PACKAGE_ROOT:-${HEXTUNNEL_BETA_PACKAGE_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)}}}"
 [[ -f "$ROOT/lib/common.sh" ]] || finalize_error "El paquete no contiene el framework Hex Tunnel."
@@ -39,8 +45,8 @@ if ! module_is_installed webmin; then
   module_install webmin
 fi
 
-slipstream_domain="$(tr -d '\r\n' < /etc/deekayvpn/slipstream_domain.txt 2>/dev/null || true)"
-slowdns_ns="$(tr -d '\r\n' < /etc/deekayvpn/slowdns_ns.txt 2>/dev/null || true)"
+slipstream_domain="$(read_optional_state_value /etc/deekayvpn/slipstream_domain.txt)"
+slowdns_ns="$(read_optional_state_value /etc/deekayvpn/slowdns_ns.txt)"
 if [[ -n "$slipstream_domain" ]]; then
   [[ -n "$slowdns_ns" ]] || finalize_error "No se encontró el Nameserver de SlowDNS para instalar SlipStream."
   HEXTUNNEL_SLIPSTREAM_DOMAIN="$slipstream_domain"

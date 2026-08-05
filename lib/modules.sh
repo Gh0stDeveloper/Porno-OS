@@ -78,7 +78,9 @@ resolve_module_dependencies() {
 }
 
 module_mark_installed() {
-  local module="$1" marker="$HEXTUNNEL_MODULE_STATE_DIR/$module"
+  local module marker
+  module="$1"
+  marker="$HEXTUNNEL_MODULE_STATE_DIR/$module"
   ensure_dir 700 "$HEXTUNNEL_MODULE_STATE_DIR"
   backup_path "$marker"
   [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] && return 0
@@ -90,7 +92,9 @@ EOF
 }
 
 module_mark_uninstalled() {
-  local module="$1" marker="$HEXTUNNEL_MODULE_STATE_DIR/$module"
+  local module marker
+  module="$1"
+  marker="$HEXTUNNEL_MODULE_STATE_DIR/$module"
   backup_path "$marker"
   [[ "${HEXTUNNEL_DRY_RUN:-0}" == 1 ]] || rm -f "$marker"
 }

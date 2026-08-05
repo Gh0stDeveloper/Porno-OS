@@ -33,6 +33,20 @@ for module in ssh xray hysteria hysteria2 udp-custom slowdns slipstream zivpn we
   module_exists "$module"
 done
 
+stage nounset-safe-module-state
+module_mark_installed legacy-all
+module_mark_uninstalled legacy-all
+
+stage optional-finalizer-state
+(
+  finalizer="$ROOT/bin/hextunnel-finalize-install"
+  eval "$(awk '/^\[\[ "\$\{EUID:-/{exit} {print}' "$finalizer")"
+  missing="$HEXTUNNEL_STATE/does-not-exist.txt"
+  [[ -z "$(read_optional_state_value "$missing")" ]]
+  printf 'ns.example.test\r\n' > "$HEXTUNNEL_STATE/slowdns_ns.txt"
+  [[ "$(read_optional_state_value "$HEXTUNNEL_STATE/slowdns_ns.txt")" == ns.example.test ]]
+)
+
 stage certificate-common-name
 HEXTUNNEL_DOMAIN='invalid/domain:with spaces-and-a-name-that-is-deliberately-longer-than-sixty-four-characters.example'
 common_name="$(ssh_certificate_common_name)"
