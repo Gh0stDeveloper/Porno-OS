@@ -29,7 +29,7 @@ required=(
   bin/hextunnel-private-install bin/hextunnel-private-upgrade bin/hextunnel-beta-install
   bin/hextunnel-license bin/hextunnel-install-license-runtime
   bin/hextunnel-install-locked-component bin/hextunnel-slipstream-compat
-  bin/hextunnel-cloudflare-warp
+  bin/hextunnel-cloudflare-warp bin/hextunnel-recover-legacy-partial
   lib/install-runtime.sh lib/install-runtime-guards.sh lib/network-policy.sh
   lib/account-display.sh lib/account-runtime-guards.sh
   docs/ARCHITECTURE.md docs/BETA.md docs/OPERATIONS.md docs/RECOVERY.md docs/PRIVATE_DISTRIBUTION.md
@@ -38,6 +38,7 @@ required=(
   tests/unit/test-install-runtime-network.sh tests/unit/test-rollback-service-quiesce.sh
   tests/unit/test-network-policy-config-format.sh tests/unit/test-menu-parity.sh
   tests/unit/test-legacy-port-conflict.sh tests/unit/test-cloudflare-warp.sh
+  tests/unit/test-legacy-partial-recovery.sh
   SECURITY.md CHANGELOG.md VERSION
 )
 for path in "${required[@]}"; do
@@ -85,6 +86,7 @@ run_step runtime-config-readonly bash tests/unit/test-runtime-config-readonly.sh
 run_step package-manager-lock bash tests/unit/test-package-manager-lock.sh
 run_step legacy-port-conflict bash tests/unit/test-legacy-port-conflict.sh
 run_step cloudflare-warp bash tests/unit/test-cloudflare-warp.sh
+run_step legacy-partial-recovery bash tests/unit/test-legacy-partial-recovery.sh
 run_step install-runtime-network bash tests/unit/test-install-runtime-network.sh
 run_step rollback-service-quiesce bash tests/unit/test-rollback-service-quiesce.sh
 run_step network-policy-config-format bash tests/unit/test-network-policy-config-format.sh
@@ -137,6 +139,7 @@ for packaged in \
   bin/hextunnel-install-license-runtime \
   bin/hextunnel-arm64-menu \
   bin/hextunnel-cloudflare-warp \
+  bin/hextunnel-recover-legacy-partial \
   lib/install-runtime-guards.sh \
   lib/network-policy.sh \
   lib/account-display.sh \
