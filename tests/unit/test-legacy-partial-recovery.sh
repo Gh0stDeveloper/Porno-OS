@@ -57,6 +57,11 @@ run_root() {
   fi
 }
 
+write_root_file() {
+  local path="$1" content="$2"
+  run_root bash -c 'printf "%s" "$2" > "$1"' _ "$path" "$content"
+}
+
 for name in zorro deekay ws-proxy slowdns hysteria2; do
   touch "$WORK/evidence/$name"
 done
@@ -92,32 +97,32 @@ run_root env "${common_env[@]}" bash "$HELPER" stop
 for stopped in \
   ws-proxy@25.service sslh.service nginx.service server-sldns.service \
   xray.service hysteria2-server.service udp-custom.service zivpn.service; do
-  grep -Fq "systemctl stop $stopped" "$LOG"
+  run_root grep -Fq "systemctl stop $stopped" "$LOG"
 done
 
-if grep -Eq 'systemctl stop (ssh|sshd|systemd-resolved)(\.service)?' "$LOG"; then
+if run_root grep -Eq 'systemctl stop (ssh|sshd|systemd-resolved)(\.service)?' "$LOG"; then
   echo 'la recuperación parcial no debe detener SSH ni systemd-resolved' >&2
   exit 1
 fi
 
-grep -Fxq 'ssh.service' "$ACTIVE"
-grep -Fxq 'systemd-resolved.service' "$ACTIVE"
-find "$WORK/recovery" -type f -name 'legacy-partial-stopped.*' -print -quit | grep -q .
+run_root grep -Fxq 'ssh.service' "$ACTIVE"
+run_root grep -Fxq 'systemd-resolved.service' "$ACTIVE"
+run_root find "$WORK/recovery" -type f -name 'legacy-partial-stopped.*' -print -quit | grep -q .
 
-: > "$LOG"
+run_root truncate -s 0 "$LOG"
 printf 'installed_at=now\nversion=test\n' > "$WORK/modules/legacy-all"
-printf 'ws-proxy@25.service\nsslh.service\n' > "$ACTIVE"
+write_root_file "$ACTIVE" $'ws-proxy@25.service\nsslh.service\n'
 run_root env "${common_env[@]}" bash "$HELPER" stop
-if grep -Fq 'systemctl stop' "$LOG"; then
+if run_root grep -Fq 'systemctl stop' "$LOG"; then
   echo 'una instalación finalizada no debe detener servicios durante el preflight' >&2
   exit 1
 fi
 
 rm -f "$WORK/modules/legacy-all"
 printf 'HEXTUNNEL_INSTALL_MODE=complete-sanitized-panel\n' > "$WORK/etc/install-mode.env"
-: > "$LOG"
+run_root truncate -s 0 "$LOG"
 run_root env "${common_env[@]}" bash "$HELPER" stop
-if grep -Fq 'systemctl stop' "$LOG"; then
+if run_root grep -Fq 'systemctl stop' "$LOG"; then
   echo 'install-mode finalizado debe impedir recuperación parcial' >&2
   exit 1
 fi
