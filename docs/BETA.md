@@ -1,4 +1,4 @@
-# Hex Tunnel 1.0.0-rc.20 — prueba privada
+# Hex Tunnel 1.0.0-rc.21 — prueba privada
 
 Esta prueba valida instalación comercial, activación permanente, reseller, renovación, actualización privada, menú administrativo y compatibilidad AMD64/ARM64 antes de declarar estable la distribución.
 
@@ -52,6 +52,10 @@ El perfil ARM64 instala SSH/TLS, Xray, Hysteria v1, Hysteria 2, ZiVPN, Webmin, m
 - `rc.20`: el modo visual ya no puede generar una entrada vacía `arch=` al redirigir la salida de `dpkg` al registro.
 - `rc.20`: la validación del repositorio muestra el error completo de APT antes de retirar una fuente rechazada.
 - `rc.20`: la instalación de `cloudflare-warp` y la configuración del proxy devuelven diagnósticos explícitos por etapa.
+- `rc.21`: la finalización AMD64 tolera la ausencia de archivos de estado opcionales de SlowDNS y SlipStream.
+- `rc.21`: SlowDNS solo se exige cuando existe un dominio SlipStream pendiente.
+- `rc.21`: los marcadores de módulos se construyen después de inicializar el nombre del módulo y son seguros bajo `set -u`.
+- `rc.21`: las pruebas reproducen el archivo opcional ausente, contenido CRLF y las operaciones de estado bajo nounset.
 
 El instalador nunca elimina archivos lock ni termina procesos de APT/DPKG para forzar acceso. El rollback cancela descargas anticipadas, apaga servicios nuevos, restaura firewall, archivos administrados, estados originales y el estado runtime previo de IPv6.
 
@@ -117,7 +121,7 @@ Una instalación anterior interrumpida puede dejar esta fuente con una clave ant
 /etc/apt/sources.list.d/cloudflare-client.list
 ```
 
-`rc.20` la respalda antes de retirarla y vuelve a comprobar APT. El helper mantenido admite:
+`rc.20` y posteriores la respaldan antes de retirarla y vuelven a comprobar APT. El helper mantenido admite:
 
 ```bash
 sudo /opt/hextunnel/bin/hextunnel-cloudflare-warp cleanup
@@ -161,7 +165,7 @@ Salida esperada:
 root:root 1777 /tmp
 ```
 
-`rc.20` vuelve a comprobar y reparar ese estado antes de cada operación protegida. Si `unattended-upgrades` posee un lock real, el instalador espera y muestra el PID; no elimina el lock ni termina el proceso.
+`rc.19` y posteriores vuelven a comprobar y reparar ese estado antes de cada operación protegida. Si `unattended-upgrades` posee un lock real, el instalador espera y muestra el PID; no elimina el lock ni termina el proceso.
 
 Solo debe aparecer una espera APT cuando un proceso posea realmente uno de estos locks:
 
@@ -260,9 +264,11 @@ Antes de validar los puertos, el instalador revisa la última transacción `ROLL
 
 Los artefactos verificados permanecen en `/var/cache/hextunnel/artifacts` durante siete días por defecto. Un archivo corrupto o con SHA-256 diferente se rechaza y vuelve a descargarse.
 
+En `rc.21` no se deben crear manualmente archivos vacíos como `/etc/deekayvpn/slowdns_ns.txt`; el finalizador trata ese estado como opcional mientras SlipStream no esté pendiente.
+
 ## Actualización comercial
 
-Cuando `1.0.0-rc.20` sea la release activa:
+Cuando `1.0.0-rc.21` sea la release activa:
 
 ```bash
 sudo hextunnel-upgrade
