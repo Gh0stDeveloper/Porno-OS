@@ -21,7 +21,10 @@ for mode in beta licensed; do
   grep -q 'LogLevel INFO' "$output"
   grep -q 'systemd-resolved se conserva activo' "$output"
   grep -q 'Se conserva /root/.profile' "$output"
-  if grep -Eq 'apt-get upgrade|chmod 777|ssl=0|raw\.githubusercontent\.com/.*/main/|sh\.rustup\.rs.*\|.*sh|dropbox\.com/.*/badvpn' "$output"; then
+  grep -q '^hextunnel_dns_listen_address()' "$output"
+  grep -Fq 'SlowDNS_Listen="$(hextunnel_dns_listen_address):53"' "$output"
+  grep -Fq 'setLocal("$(hextunnel_dns_listen_address):53")' "$output"
+  if grep -Eq 'apt-get upgrade|chmod 777|ssl=0|raw\.githubusercontent\.com/.*/main/|sh\.rustup\.rs.*\|.*sh|dropbox\.com/.*/badvpn|SlowDNS_Listen=":53"|setLocal\("0\.0\.0\.0:53"\)' "$output"; then
     echo "runtime $mode conserva un patrón prohibido" >&2
     exit 1
   fi
@@ -29,4 +32,4 @@ done
 
 grep -q 'HEXTUNNEL_BETA_MODE' "$WORK/install-beta.sh"
 grep -q 'HEXTUNNEL_LICENSE_PREVALIDATED' "$WORK/install-licensed.sh"
-printf 'legacy runtime sanitization: ok\n'
+printf 'legacy runtime sanitization and DNS listener binding: ok\n'
