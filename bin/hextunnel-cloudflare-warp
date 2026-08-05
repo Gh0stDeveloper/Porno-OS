@@ -72,8 +72,8 @@ prepare_shared_tmp() {
 }
 
 run_package_manager() {
-  [[ -x "$PACKAGE_MANAGER" ]] || warp_die "No se encontró el gestor de paquetes seguro: $PACKAGE_MANAGER"
-  "$PACKAGE_MANAGER" "$@"
+  [[ -r "$PACKAGE_MANAGER" ]] || warp_die "No se encontró el gestor de paquetes seguro: $PACKAGE_MANAGER"
+  bash "$PACKAGE_MANAGER" "$@"
 }
 
 backup_file() {
