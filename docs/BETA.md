@@ -1,4 +1,4 @@
-# Hex Tunnel 1.0.0-rc.16 — prueba privada
+# Hex Tunnel 1.0.0-rc.17 — prueba privada
 
 Esta prueba valida instalación comercial, activación permanente, reseller, renovación, actualización privada, menú administrativo y compatibilidad AMD64/ARM64 antes de declarar estable la distribución.
 
@@ -35,6 +35,10 @@ El perfil ARM64 instala SSH/TLS, Xray, Hysteria v1, Hysteria 2, ZiVPN, Webmin, m
 - `rc.16`: los propietarios ajenos a OpenSSH continúan siendo conflictos estrictos y muestran la línea completa del listener.
 - `rc.16`: la instalación comercial utiliza una interfaz por fases con colores y estados `[•]`, `[✓]`, `[!]` y `[✗]`.
 - `rc.16`: la salida extensa se conserva en `/var/log/hextunnel_install.log`; cualquier fallo imprime el diagnóstico completo en la terminal.
+- `rc.17`: el preflight acepta UDP 53 ocupado por `systemd-resolved` únicamente cuando todos sus listeners permanecen en `127.0.0.53/54`.
+- `rc.17`: la validación analiza todas las líneas devueltas por `ss`, evitando ocultar un listener público ajeno detrás de uno local permitido.
+- `rc.17`: SlowDNS y dnsdist escuchan en la IPv4 asignada a la interfaz del VPS, no en `0.0.0.0:53`, y pueden coexistir con el resolvedor local.
+- `rc.17`: `systemd-resolved` y `/etc/resolv.conf` se conservan; no se interrumpe la resolución DNS del sistema durante la instalación.
 
 El instalador nunca elimina archivos lock ni termina procesos de APT/DPKG para forzar acceso. El rollback cancela descargas anticipadas, apaga servicios nuevos, restaura firewall, archivos administrados, estados originales y el estado runtime previo de IPv6.
 
@@ -49,8 +53,9 @@ Durante una instalación real AMD64 deben aparecer mensajes similares a:
 ```text
 [•] Iniciando instalación
 [•] Instalación parte [1/6] — Revisando sistema y puertos
-[✓] Puerto tcp/22 conservado por OpenSSH/systemd
+[✓] Puerto tcp/22 conservado: listener compatible existente
 [✓] Puerto tcp/299 disponible
+[✓] Puerto udp/53 conservado: listener compatible existente
 [•] Instalación parte [2/6] — Preparando componentes verificados
 [•] Instalación parte [3/6] — Instalando servicios y configuraciones
 [•] Procesando paquetes del sistema
@@ -60,6 +65,34 @@ Durante una instalación real AMD64 deben aparecer mensajes similares a:
 ```
 
 Si una fase falla, debe aparecer `[✗]`, seguido de `Detalles completos del error:` y la salida íntegra de la fase o de `/var/log/hextunnel_install.log`.
+
+## Convivencia DNS en Ubuntu
+
+Ubuntu puede mantener estos stubs locales:
+
+```text
+127.0.0.53:53 systemd-resolved
+127.0.0.54:53 systemd-resolved
+```
+
+Hex Tunnel no debe detener ese servicio. SlowDNS o dnsdist deben escuchar en la IPv4 asignada a la interfaz principal del VPS. En Oracle Cloud normalmente será la IPv4 privada de la VNIC porque la IPv4 pública se aplica mediante NAT.
+
+Comprobar la dirección seleccionable:
+
+```bash
+ip -4 route get 1.1.1.1
+ip -4 addr show
+```
+
+Después de instalar:
+
+```bash
+sudo ss -lunp 'sport = :53'
+sudo systemctl is-active systemd-resolved
+sudo resolvectl status
+```
+
+Se acepta que aparezcan los stubs `127.0.0.53/54:53` junto con SlowDNS o dnsdist en la IPv4 de la interfaz. No se acepta otro proceso en `0.0.0.0:53`, en la IP de la interfaz o en una dirección pública.
 
 Solo debe aparecer una espera APT cuando un proceso posea realmente uno de estos locks:
 
@@ -160,7 +193,7 @@ Los artefactos verificados permanecen en `/var/cache/hextunnel/artifacts` durant
 
 ## Actualización comercial
 
-Cuando `1.0.0-rc.16` sea la release activa:
+Cuando `1.0.0-rc.17` sea la release activa:
 
 ```bash
 sudo hextunnel-upgrade
@@ -191,6 +224,9 @@ ERROR: El paquete no contiene el actualizador privado.
 ```bash
 sudo systemctl --failed
 sudo ss -lntup
+sudo ss -lunp 'sport = :53'
+sudo systemctl is-active systemd-resolved
+sudo resolvectl status
 sudo sysctl net.ipv6.conf.all.disable_ipv6 net.ipv6.conf.default.disable_ipv6
 sudo hextunnel version
 sudo hextunnel status
@@ -206,6 +242,7 @@ Comprobar:
 - SSH accesible en 22 y 299.
 - Xray y sus transportes activos.
 - Hysteria v1, Hysteria 2 y ZiVPN operativos.
+- UDP 53 del túnel enlazado a la IPv4 de la interfaz y `systemd-resolved` activo únicamente en loopback.
 - Listeners públicos en IPv4 cuando `HEXTUNNEL_DISABLE_IPV6=1`.
 - Stunnel, SSLH, Fail2ban y HAProxy activos cuando correspondan.
 - Cuentas con creación, suspensión, renovación, expiración y eliminación.
@@ -229,7 +266,7 @@ sudo hextunnel-license status
 sudo menu
 ```
 
-No se acepta una VPS si pierde SSH, protocolos, NAT, firewall, activación, reseller o menú después del reinicio.
+No se acepta una VPS si pierde SSH, DNS del sistema, protocolos, NAT, firewall, activación, reseller o menú después del reinicio.
 
 ## Datos sensibles
 
