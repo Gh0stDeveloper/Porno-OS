@@ -122,8 +122,8 @@ run_root env \
   bash "$HELPER" cleanup
 
 [[ ! -e "$SOURCE_FILE" && ! -e "$KEYRING_FILE" ]]
-find "$STATE_DIR/backups" -type f -name 'cloudflare-client.list.*' -print -quit | grep -q .
-find "$STATE_DIR/backups" -type f -name 'cloudflare-warp-keyring.gpg.*' -print -quit | grep -q .
+run_root find "$STATE_DIR/backups" -type f -name 'cloudflare-client.list.*' -print -quit | grep -q .
+run_root find "$STATE_DIR/backups" -type f -name 'cloudflare-warp-keyring.gpg.*' -print -quit | grep -q .
 
 printf 'deb https://example.invalid/ stable main\n' > "$SOURCE_FILE"
 if run_root env \
@@ -148,7 +148,8 @@ run_root env \
   HEXTUNNEL_WARP_STATE_DIR="$STATE_DIR" \
   bash "$HELPER" install
 
-[[ -s "$SOURCE_FILE" && -s "$KEYRING_FILE" && -s "$STATE_DIR/state.env" ]]
+[[ -s "$SOURCE_FILE" && -s "$KEYRING_FILE" ]]
+run_root test -s "$STATE_DIR/state.env"
 grep -Fq "signed-by=$KEYRING_FILE" "$SOURCE_FILE"
 grep -Fq 'https://pkg.cloudflareclient.com/ noble main' "$SOURCE_FILE"
 grep -Fq 'apt-get install -y cloudflare-warp' "$LOG"
