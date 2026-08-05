@@ -36,6 +36,7 @@ required=(
   tests/unit/test-runtime-config-readonly.sh tests/unit/test-package-manager-lock.sh
   tests/unit/test-install-runtime-network.sh tests/unit/test-rollback-service-quiesce.sh
   tests/unit/test-network-policy-config-format.sh tests/unit/test-menu-parity.sh
+  tests/unit/test-legacy-port-conflict.sh
   SECURITY.md CHANGELOG.md VERSION
 )
 for path in "${required[@]}"; do
@@ -81,6 +82,7 @@ run_step current-tree bash tests/security/test-current-tree.sh
 run_step core bash tests/unit/test-core.sh
 run_step runtime-config-readonly bash tests/unit/test-runtime-config-readonly.sh
 run_step package-manager-lock bash tests/unit/test-package-manager-lock.sh
+run_step legacy-port-conflict bash tests/unit/test-legacy-port-conflict.sh
 run_step install-runtime-network bash tests/unit/test-install-runtime-network.sh
 run_step rollback-service-quiesce bash tests/unit/test-rollback-service-quiesce.sh
 run_step network-policy-config-format bash tests/unit/test-network-policy-config-format.sh

@@ -47,8 +47,8 @@ tmp="$(account_xray_temp_file)"
 [[ "$tmp" == *.json ]]
 rm -f "$tmp"
 
-secret="$(HEXTUNNEL_ACCOUNT_SECRET='ClaveSegura-2026' account_read_ssh_password)"
-[[ "$secret" == 'ClaveSegura-2026' ]]
+secret="$(HEXTUNNEL_ACCOUNT_SECRET='abc123' account_read_ssh_password)"
+[[ "$secret" == 'abc123' ]]
 
 # shellcheck disable=SC1091
 source "$ROOT/lib/account-display.sh"

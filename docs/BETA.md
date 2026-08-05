@@ -1,4 +1,4 @@
-# Hex Tunnel 1.0.0-rc.15 — prueba privada
+# Hex Tunnel 1.0.0-rc.16 — prueba privada
 
 Esta prueba valida instalación comercial, activación permanente, reseller, renovación, actualización privada, menú administrativo y compatibilidad AMD64/ARM64 antes de declarar estable la distribución.
 
@@ -31,6 +31,10 @@ El perfil ARM64 instala SSH/TLS, Xray, Hysteria v1, Hysteria 2, ZiVPN, Webmin, m
 - `rc.15`: el administrador puede introducir y confirmar una contraseña SSH visible al crear la cuenta.
 - `rc.15`: la entrega SSH muestra un bloque legible y conexiones compactas `HOST:PUERTO@USUARIO:CONTRASEÑA`.
 - `rc.15`: la creación SSH comprueba las reglas locales de los puertos administrados dentro de la misma transacción y restaura el firewall si falla.
+- `rc.16`: el preflight AMD64 acepta que OpenSSH ya ocupe TCP 22 o 299 mediante `sshd` o `systemd`, sin desactivar ni mover el acceso administrativo.
+- `rc.16`: los propietarios ajenos a OpenSSH continúan siendo conflictos estrictos y muestran la línea completa del listener.
+- `rc.16`: la instalación comercial utiliza una interfaz por fases con colores y estados `[•]`, `[✓]`, `[!]` y `[✗]`.
+- `rc.16`: la salida extensa se conserva en `/var/log/hextunnel_install.log`; cualquier fallo imprime el diagnóstico completo en la terminal.
 
 El instalador nunca elimina archivos lock ni termina procesos de APT/DPKG para forzar acceso. El rollback cancela descargas anticipadas, apaga servicios nuevos, restaura firewall, archivos administrados, estados originales y el estado runtime previo de IPv6.
 
@@ -40,14 +44,22 @@ El instalador nunca elimina archivos lock ni termina procesos de APT/DPKG para f
 sudo bash -c 'command -v curl >/dev/null 2>&1 || { apt-get update -y && apt-get install -y curl ca-certificates; }; curl -fsSL https://ghostdeveloper.duckdns.org/install.sh -o /tmp/hextunnel-install.sh && chmod 700 /tmp/hextunnel-install.sh && exec /tmp/hextunnel-install.sh install'
 ```
 
-Durante una instalación real deben aparecer mensajes similares a:
+Durante una instalación real AMD64 deben aparecer mensajes similares a:
 
 ```text
-Descarga anticipada iniciada: xray-v26.3.27-Xray-linux-arm64-v8a.zip (pid=...)
-Descarga anticipada iniciada: hysteria2-app-v2.9.3-hysteria-linux-arm64 (pid=...)
-[FASE 1/6 | 0%] Iniciando SSH + TLS.
-Artefacto reutilizado desde caché verificada: xray-v26.3.27-Xray-linux-arm64-v8a.zip
+[•] Iniciando instalación
+[•] Instalación parte [1/6] — Revisando sistema y puertos
+[✓] Puerto tcp/22 conservado por OpenSSH/systemd
+[✓] Puerto tcp/299 disponible
+[•] Instalación parte [2/6] — Preparando componentes verificados
+[•] Instalación parte [3/6] — Instalando servicios y configuraciones
+[•] Procesando paquetes del sistema
+[•] Configurando servicio ssh
+[•] Abriendo puerto 443
+[✓] Servicios y configuraciones instalados
 ```
+
+Si una fase falla, debe aparecer `[✗]`, seguido de `Detalles completos del error:` y la salida íntegra de la fase o de `/var/log/hextunnel_install.log`.
 
 Solo debe aparecer una espera APT cuando un proceso posea realmente uno de estos locks:
 
@@ -148,7 +160,7 @@ Los artefactos verificados permanecen en `/var/cache/hextunnel/artifacts` durant
 
 ## Actualización comercial
 
-Cuando `1.0.0-rc.15` sea la release activa:
+Cuando `1.0.0-rc.16` sea la release activa:
 
 ```bash
 sudo hextunnel-upgrade

@@ -29,7 +29,14 @@ load_runtime_config
 load_hextunnel_secrets
 load_module_registry
 
+ui_header "HEX TUNNEL · INSTALACIÓN"
+ui_step "Iniciando instalación"
+ui_phase 1 6 "Revisando sistema, arquitectura y recursos"
+ui_step "Revisando puertos requeridos"
+
 HEXTUNNEL_FORCE="${HEXTUNNEL_FORCE:-0}"
 export HEXTUNNEL_FORCE
 preflight_all legacy-all
-printf 'Preflight del instalador completo: correcto.\n'
+
+ui_success "OpenSSH conservará el acceso administrativo por tcp/22"
+ui_success "Revisión previa completada"

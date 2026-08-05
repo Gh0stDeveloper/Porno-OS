@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.0-rc.16 — 2026-08-04
+
+- El preflight AMD64 reconoce como válidos los listeners TCP 22 y 299 administrados por `sshd` o `systemd`, conservando el acceso SSH durante la instalación.
+- Los procesos ajenos a OpenSSH continúan bloqueando la instalación y el error muestra la línea completa del listener responsable.
+- El instalador comercial adopta una interfaz decorativa con colores, estados `[•]`, `[✓]`, `[!]` y `[✗]`, y fases numeradas.
+- La revisión muestra cada puerto requerido como disponible, conservado o en conflicto.
+- La salida extensa de APT, DPKG, servicios y componentes se guarda en `/var/log/hextunnel_install.log` para mantener limpia la terminal.
+- APT, systemd, Git y las reglas de firewall muestran avances resumidos, incluyendo `Abriendo puerto <puerto>`.
+- Cuando una fase falla, el instalador imprime el error completo y el contenido íntegro del registro técnico.
+- Se añade una prueba de regresión para listeners OpenSSH en TCP 22/299 y rechazos por propietario, puerto o protocolo incorrectos.
+- Se elimina un falso positivo de Gitleaks en una credencial ficticia utilizada únicamente por las pruebas.
+
 ## 1.0.0-rc.15 — 2026-08-04
 
 - Las credenciales dejan de usar la IPv4 privada de la VPC como host público.
