@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.0-rc.18 — 2026-08-05
+
+- La instalación AMD64 retira y respalda configuraciones incompletas del repositorio de Cloudflare WARP antes de cualquier operación de APT.
+- La clave OpenPGP oficial se descarga por HTTPS, se valida por fingerprint y se instala en un keyring dedicado utilizado mediante `signed-by`.
+- Si el repositorio de Cloudflare no supera `apt-get update`, se elimina automáticamente y se comprueba que APT vuelva a funcionar sin dejar bloqueada la fase final de Webmin.
+- `cloudflare-warp` y `warp-cli` se validan antes de configurar MASQUE, modo proxy y el listener local TCP 40000.
+- El runtime comercial deja de continuar después de una instalación WARP fallida y elimina las llamadas a `warp-cli` cuando el binario no existe.
+- Se elimina la escritura de progreso al descriptor cerrado `3`, corrigiendo el error `Bad file descriptor` del instalador visual.
+- El preflight detecta una instalación heredada interrumpida mediante varios marcadores administrados y detiene únicamente sus servicios residuales antes de volver a comprobar puertos.
+- La recuperación parcial excluye expresamente SSH y `systemd-resolved`; una instalación ya finalizada no detiene servicios.
+- Se añaden pruebas funcionales de recuperación APT/WARP, validación criptográfica, proxy local y recuperación conservadora de servicios parciales.
+
 ## 1.0.0-rc.17 — 2026-08-05
 
 - El preflight AMD64 reconoce como compatible UDP 53 ocupado por `systemd-resolved` únicamente cuando todos sus listeners están limitados a `127.0.0.53` o `127.0.0.54`.

@@ -1,4 +1,4 @@
-# Hex Tunnel 1.0.0-rc.17 — prueba privada
+# Hex Tunnel 1.0.0-rc.18 — prueba privada
 
 Esta prueba valida instalación comercial, activación permanente, reseller, renovación, actualización privada, menú administrativo y compatibilidad AMD64/ARM64 antes de declarar estable la distribución.
 
@@ -39,6 +39,11 @@ El perfil ARM64 instala SSH/TLS, Xray, Hysteria v1, Hysteria 2, ZiVPN, Webmin, m
 - `rc.17`: la validación analiza todas las líneas devueltas por `ss`, evitando ocultar un listener público ajeno detrás de uno local permitido.
 - `rc.17`: SlowDNS y dnsdist escuchan en la IPv4 asignada a la interfaz del VPS, no en `0.0.0.0:53`, y pueden coexistir con el resolvedor local.
 - `rc.17`: `systemd-resolved` y `/etc/resolv.conf` se conservan; no se interrumpe la resolución DNS del sistema durante la instalación.
+- `rc.18`: el instalador elimina y respalda una fuente incompleta de Cloudflare WARP antes del primer `apt-get update` de una reanudación.
+- `rc.18`: la clave OpenPGP de Cloudflare se descarga por HTTPS, se valida por fingerprint y se instala mediante un keyring dedicado con `signed-by`.
+- `rc.18`: si el repositorio de Cloudflare no supera la verificación de APT, se retira automáticamente y no queda bloqueando Webmin ni futuras actualizaciones.
+- `rc.18`: `warp-cli` solo se ejecuta después de instalar y validar `cloudflare-warp`; el proxy local debe quedar escuchando en `127.0.0.1:40000`.
+- `rc.18`: el runtime heredado deja de escribir en el descriptor cerrado `3`, eliminando el error `Bad file descriptor` durante el progreso visual.
 
 El instalador nunca elimina archivos lock ni termina procesos de APT/DPKG para forzar acceso. El rollback cancela descargas anticipadas, apaga servicios nuevos, restaura firewall, archivos administrados, estados originales y el estado runtime previo de IPv6.
 
@@ -59,6 +64,8 @@ Durante una instalación real AMD64 deben aparecer mensajes similares a:
 [•] Instalación parte [2/6] — Preparando componentes verificados
 [•] Instalación parte [3/6] — Instalando servicios y configuraciones
 [•] Procesando paquetes del sistema
+[•] Configurando Cloudflare WARP como proxy local
+[✓] Cloudflare WARP disponible en el proxy local 40000
 [•] Configurando servicio ssh
 [•] Abriendo puerto 443
 [✓] Servicios y configuraciones instalados
@@ -93,6 +100,36 @@ sudo resolvectl status
 ```
 
 Se acepta que aparezcan los stubs `127.0.0.53/54:53` junto con SlowDNS o dnsdist en la IPv4 de la interfaz. No se acepta otro proceso en `0.0.0.0:53`, en la IP de la interfaz o en una dirección pública.
+
+## Recuperación de Cloudflare WARP y APT
+
+Una instalación `rc.17` interrumpida puede dejar esta fuente con una clave anterior o incompleta:
+
+```text
+/etc/apt/sources.list.d/cloudflare-client.list
+```
+
+`rc.18` la respalda antes de retirarla y vuelve a comprobar APT. El helper mantenido admite:
+
+```bash
+sudo /opt/hextunnel/bin/hextunnel-cloudflare-warp cleanup
+sudo /opt/hextunnel/bin/hextunnel-cloudflare-warp repair
+sudo /opt/hextunnel/bin/hextunnel-cloudflare-warp install
+```
+
+La instalación no debe utilizar `apt-key`, `trusted=yes` ni continuar después de un fallo de firma. Comprobaciones posteriores:
+
+```bash
+sudo apt-get update
+sudo test -s /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+sudo grep -F 'signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg' \
+  /etc/apt/sources.list.d/cloudflare-client.list
+command -v warp-cli
+sudo systemctl is-active warp-svc
+sudo ss -lntp 'sport = :40000'
+```
+
+El fingerprint de la clave debe terminar en `6E2DD2174FA1C3BA`. Si la firma del repositorio no puede validarse, la fuente de Cloudflare debe desaparecer y `apt-get update` debe volver a funcionar con los repositorios restantes.
 
 Solo debe aparecer una espera APT cuando un proceso posea realmente uno de estos locks:
 
@@ -193,7 +230,7 @@ Los artefactos verificados permanecen en `/var/cache/hextunnel/artifacts` durant
 
 ## Actualización comercial
 
-Cuando `1.0.0-rc.17` sea la release activa:
+Cuando `1.0.0-rc.18` sea la release activa:
 
 ```bash
 sudo hextunnel-upgrade
@@ -211,6 +248,7 @@ bin/hextunnel-private-install
 bin/hextunnel-private-upgrade
 bin/hextunnel-license
 bin/hextunnel-install-license-runtime
+bin/hextunnel-cloudflare-warp
 ```
 
 La actualización debe conservar cuentas, listeners, NAT, firewall, configuraciones, activación, reseller y menú. No debe aparecer:
@@ -225,8 +263,11 @@ ERROR: El paquete no contiene el actualizador privado.
 sudo systemctl --failed
 sudo ss -lntup
 sudo ss -lunp 'sport = :53'
+sudo ss -lntp 'sport = :40000'
 sudo systemctl is-active systemd-resolved
+sudo systemctl is-active warp-svc
 sudo resolvectl status
+sudo apt-get update
 sudo sysctl net.ipv6.conf.all.disable_ipv6 net.ipv6.conf.default.disable_ipv6
 sudo hextunnel version
 sudo hextunnel status
@@ -243,6 +284,8 @@ Comprobar:
 - Xray y sus transportes activos.
 - Hysteria v1, Hysteria 2 y ZiVPN operativos.
 - UDP 53 del túnel enlazado a la IPv4 de la interfaz y `systemd-resolved` activo únicamente en loopback.
+- Cloudflare WARP activo y con proxy local en TCP 40000 cuando Hysteria v1 lo utilice.
+- APT sin repositorios rotos ni errores `NO_PUBKEY`.
 - Listeners públicos en IPv4 cuando `HEXTUNNEL_DISABLE_IPV6=1`.
 - Stunnel, SSLH, Fail2ban y HAProxy activos cuando correspondan.
 - Cuentas con creación, suspensión, renovación, expiración y eliminación.
@@ -276,6 +319,7 @@ Se conservan con permisos restrictivos:
 /etc/hextunnel/activation.token
 /etc/hextunnel/license-state.env
 /etc/hextunnel/license-public.pem
+/var/lib/hextunnel/warp/state.env
 ```
 
 La key original no debe conservarse en el cliente.

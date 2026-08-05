@@ -24,7 +24,11 @@ for mode in beta licensed; do
   grep -q '^hextunnel_dns_listen_address()' "$output"
   grep -Fq 'SlowDNS_Listen="$(hextunnel_dns_listen_address):53"' "$output"
   grep -Fq 'setLocal("$(hextunnel_dns_listen_address):53")' "$output"
-  if grep -Eq 'apt-get upgrade|chmod 777|ssl=0|raw\.githubusercontent\.com/.*/main/|sh\.rustup\.rs.*\|.*sh|dropbox\.com/.*/badvpn|SlowDNS_Listen=":53"|setLocal\("0\.0\.0\.0:53"\)' "$output"; then
+  grep -Fq 'hextunnel-cloudflare-warp" cleanup' "$output"
+  grep -Fq 'hextunnel-cloudflare-warp" install || exit $?' "$output"
+  grep -Fq 'Instalando paquetes necesarios (esto tarda unos minutos)' "$output"
+
+  if grep -Eq 'apt-get upgrade|chmod 777|ssl=0|raw\.githubusercontent\.com/.*/main/|sh\.rustup\.rs.*\|.*sh|dropbox\.com/.*/badvpn|SlowDNS_Listen=":53"|setLocal\("0\.0\.0\.0:53"\)|pkg\.cloudflareclient\.com/pubkey\.gpg|warp-cli --accept-tos|>&3' "$output"; then
     echo "runtime $mode conserva un patrón prohibido" >&2
     exit 1
   fi
@@ -32,4 +36,4 @@ done
 
 grep -q 'HEXTUNNEL_BETA_MODE' "$WORK/install-beta.sh"
 grep -q 'HEXTUNNEL_LICENSE_PREVALIDATED' "$WORK/install-licensed.sh"
-printf 'legacy runtime sanitization and DNS listener binding: ok\n'
+printf 'legacy runtime sanitization, DNS binding and WARP recovery: ok\n'
