@@ -18,6 +18,7 @@ function emit_header() {
   print "if [[ -r /etc/hextunnel/hextunnel.env ]]; then"
   print "  source /etc/hextunnel/hextunnel.env"
   print "fi"
+  print "\"$HEXTUNNEL_PACKAGE_ROOT/bin/hextunnel-cloudflare-warp\" cleanup"
   print "hextunnel_dns_listen_address() {"
   print "  local address=\"${HEXTUNNEL_DNS_LISTEN_ADDRESS:-}\" token previous=\"\""
   print "  if [[ -z \"$address\" ]]; then"
@@ -45,8 +46,8 @@ function emit_header() {
 BEGIN {
   license=upgrade=resolved_stop=resolved_disable=resolv_rm=resolv_write=firewall_purge=0
   webmin=slowdns=singbox=badvpn=udp_binary=udp_config=zivpn=profile=menu_slip=region_check=0
-  dns_bind=dnsdist_bind=0
-  skip_webmin=skip_profile=skip_badvpn=skip_menu_slip=0
+  dns_bind=dnsdist_bind=warp=fd3=0
+  skip_webmin=skip_profile=skip_badvpn=skip_menu_slip=skip_warp=0
 }
 NR == 1 { print; emit_header(); next }
 
@@ -76,6 +77,20 @@ skip_badvpn {
 }
 $0 == "# BadVPN Binary (Provides 127.0.0.1:7300 upstream for UDP Custom)" {
   badvpn++; print; skip_badvpn=1; next
+}
+
+skip_warp {
+  if ($0 == "sleep 2") {
+    skip_warp=0
+  }
+  next
+}
+$0 ~ /^# === HYSTERIA v1 .*CLOUDFLARE WARP ===$/ {
+  warp++
+  print "# Cloudflare WARP se instala mediante el componente mantenido y verificado."
+  print "\"$HEXTUNNEL_PACKAGE_ROOT/bin/hextunnel-cloudflare-warp\" install || exit $?"
+  skip_warp=1
+  next
 }
 
 skip_menu_slip {
@@ -123,6 +138,9 @@ $0 == "echo \"  -> Actualizando el sistema (apt upgrade)...\"" {
 $0 == "apt-get update -y && apt-get upgrade -y --with-new-pkgs" {
   upgrade++; print "apt-get update -y"; next
 }
+$0 == "echo \"  -> Instalando paquetes necesarios (esto tarda unos minutos)...\" >&3" {
+  fd3++; print "echo \"  -> Instalando paquetes necesarios (esto tarda unos minutos)...\""; next
+}
 $0 == "systemctl stop systemd-resolved 2>/dev/null" {
   resolved_stop++; print "echo \"systemd-resolved se conserva activo.\""; next
 }
@@ -132,7 +150,7 @@ $0 == "systemctl disable systemd-resolved 2>/dev/null" {
 $0 == "rm -f /etc/resolv.conf" {
   resolv_rm++; print "echo \"/etc/resolv.conf se conserva.\""; next
 }
-$0 ~ /^printf .nameserver %s/ && $0 ~ /> \/etc\/resolv.conf$/ {
+$0 ~ /^printf .nameserver %s/ && $0 ~ /> \/etc\/resolv\.conf$/ {
   resolv_write++; print ": # resolver administrado por el sistema"; next
 }
 $0 == "apt -y --purge remove apache2 ufw firewalld" {
@@ -219,6 +237,7 @@ END {
   if (webmin != 1 || profile != 1 || badvpn != 1 || menu_slip != 1 || region_check != 1) { print "ERROR: bloques heredados esperados no identificados" > "/dev/stderr"; bad=1 }
   if (slowdns != 1 || singbox != 1 || udp_binary != 1 || udp_config != 1 || zivpn != 1) { print "ERROR: descargas heredadas esperadas no identificadas" > "/dev/stderr"; bad=1 }
   if (dns_bind != 1 || dnsdist_bind != 1) { print "ERROR: listeners DNS heredados no identificados" > "/dev/stderr"; bad=1 }
+  if (warp != 1 || fd3 != 1) { print "ERROR: saneamiento WARP/descriptor heredado no identificado" > "/dev/stderr"; bad=1 }
   if (bad) exit 42
 }
 ' "$SOURCE" > "$OUTPUT"
@@ -241,7 +260,10 @@ for forbidden in \
   'chmod 644 /etc/zivpn/config.json' \
   'chmod 644 /etc/hysteria/config.json' \
   'SlowDNS_Listen=":53"' \
-  'setLocal\("0\.0\.0\.0:53"\)'; do
+  'setLocal\("0\.0\.0\.0:53"\)' \
+  'pkg\.cloudflareclient\.com/pubkey\.gpg' \
+  'warp-cli --accept-tos' \
+  '>&3'; do
   if grep -En "$forbidden" "$OUTPUT" >&2; then
     printf 'ERROR: el runtime heredado conserva un patrón prohibido: %s\n' "$forbidden" >&2
     exit 1
