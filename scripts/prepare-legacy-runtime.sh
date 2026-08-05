@@ -92,8 +92,6 @@ skip_menu_slip {
     print "    if /usr/local/bin/hextunnel-slipstream-compat \"$SlipstreamDomain\" \"$current_ns\"; then"
     print "        echo \"$SlipstreamDomain\" > /etc/deekayvpn/slipstream_domain.txt"
     print "        chmod 600 /etc/deekayvpn/slipstream_domain.txt"
-    print "        echo \"$SlipstreamDomain\" > /etc/deekayvpn/slipstream_domain.txt"
-    print "        chmod 600 /etc/deekayvpn/slipstream_domain.txt"
     print "        echo \"SlipStream instalado mediante el módulo mantenido.\""
     print "    else"
     print "        echo \"No se pudo instalar SlipStream. Revisa hextunnel doctor.\""
