@@ -1,88 +1,36 @@
 # Hex Tunnel
 
-Hex Tunnel es una plataforma Bash modular y transaccional para desplegar, operar y actualizar servicios de túnel en VPS dedicadas.
+### Modular tunnel-management tooling for Linux VPS
 
-## Estado
+Hex Tunnel is a Bash-based platform for deploying, operating and updating a set of supported tunnel services on dedicated Linux servers.
 
-- Versión: `1.0.0-rc.3`.
-- Estado: release candidate privada.
-- Plataformas de producción: Debian 12, Ubuntu 22.04 LTS y Ubuntu 24.04 LTS.
-- Arquitecturas: `amd64/x86_64` y `arm64/aarch64`.
-- Distribución: bootstrap público con licencia, autorización firmada y descarga privada temporal.
+## Overview
 
-## Perfil AMD64
+The project includes installation workflows, service configuration, diagnostics, backups, license integration and controlled updates. It supports architecture-specific profiles rather than assuming every component is compatible with every VPS.
 
-La instalación comercial AMD64 conserva el instalador completo heredado saneado y después integra el framework modular, la licencia renovable, el diagnóstico, los respaldos y la actualización privada.
+## Technologies and services
 
-## Perfil ARM64
+- Bash and Linux service management.
+- SSH and TLS-based networking services.
+- Xray and supported proxy transports.
+- Automated diagnostics, recovery and backup procedures.
+- Signed authorization and private update workflows.
+- Configuration profiles for supported AMD64 and ARM64 systems.
 
-La instalación comercial detecta ARM64 automáticamente y utiliza el framework modular nativo. Incluye:
+## Compatibility
 
-- SSH, TLS, SSLH y proxy WebSocket.
-- Xray.
-- Hysteria v1 mediante Sing-box ARM64.
-- Hysteria 2.
-- ZiVPN ARM64.
-- Webmin con TLS.
-- Panel `menu` específico para ARM64.
-- Licencia renovable y actualización privada.
+The available installation profile depends on the distribution, CPU architecture, service binaries and verified dependencies. Legacy or unavailable components are disabled on platforms where they cannot be safely validated.
 
-Por seguridad, UDP Custom, SlowDNS heredado, SlipStream dependiente de ese SlowDNS y `legacy-all` no se habilitan en ARM64 hasta disponer de artefactos oficiales, reproducibles y verificables. El preflight rechaza esos módulos antes de modificar el VPS.
+## Deployment
 
-## Capacidades
+Review the repository's installer and configuration requirements before using a VPS. License validation, private binary delivery and third-party dependencies may require credentials or additional infrastructure.
 
-- Instalación, validación y desinstalación por módulo.
-- Transacciones con respaldo y rollback automático.
-- Bloqueo contra operaciones administrativas simultáneas.
-- Firewall y NAT reversibles.
-- Gestión de cuentas y expiraciones.
-- Diagnóstico sanitizado y auditoría periódica mediante systemd.
-- Respaldo, verificación, cifrado opcional y restauración.
-- Actualizaciones privadas mediante autorización y paquete verificado.
-- Actualización del menú AMD64/ARM64 junto con el framework.
-- Paquetes reproducibles con manifiesto SHA-256 interno.
+## Related projects
 
-## Instalación comercial
+- [Public website](https://github.com/Gh0stDeveloper/HexTunnelWeb)
+- [License backend](https://github.com/Gh0stDeveloper/GhostDeveloperLicenseServer)
+- [Telegram activation bot](https://github.com/Gh0stDeveloper/TeleBotGen)
 
-El bootstrap público solicita la key, consulta la API de licencias y, cuando la autorización es válida, recibe un enlace privado temporal. La respuesta se verifica mediante RSA y el paquete mediante SHA-256 antes de ejecutar el entrypoint.
+---
 
-```bash
-curl -fsSL https://ghostdeveloper.duckdns.org/install.sh -o /tmp/hextunnel-install.sh
-sudo bash /tmp/hextunnel-install.sh install
-```
-
-## Comandos instalados
-
-```bash
-sudo menu
-sudo hextunnel version
-sudo hextunnel preflight
-sudo hextunnel status
-sudo hextunnel doctor
-sudo hextunnel account --help
-sudo hextunnel backup --help
-sudo hextunnel rollback <ID>
-sudo hextunnel-license status
-sudo hextunnel-upgrade
-```
-
-## Operación y recuperación
-
-- [`docs/OPERATIONS.md`](docs/OPERATIONS.md)
-- [`docs/RECOVERY.md`](docs/RECOVERY.md)
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-- [`docs/PRIVATE_DISTRIBUTION.md`](docs/PRIVATE_DISTRIBUTION.md)
-- [`SECURITY.md`](SECURITY.md)
-
-## Desarrollo y validación
-
-```bash
-sudo ./install.sh install ssh xray hysteria2 --no-reboot
-sudo ./install.sh uninstall xray
-sudo ./install.sh doctor
-sudo ./install.sh rollback
-bash scripts/production-readiness.sh
-bash scripts/build-release.sh dist
-```
-
-Cada operación modular crea una transacción en `/var/lib/hextunnel/transactions`, respalda archivos, firewall y estados de systemd, valida configuraciones y revierte los cambios cuando falla un paso.
+**Hex Tunnel — modular operation and maintenance of supported tunnel services.**
