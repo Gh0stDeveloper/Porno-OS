@@ -62,11 +62,13 @@ grep -q "SuffixMatchNodeRule(slowdnsSuffixes)" modules/slipstream.sh
 grep -q "dnsdist -C /etc/dnsdist/dnsdist.conf --check-config" modules/slipstream.sh
 grep -q -- "--dns-listen-host 127.0.0.1 --dns-listen-port 5300" modules/slipstream.sh
 
-grep -q 'bootstrap_authorize_and_download' install.sh
-grep -q 'HEXTUNNEL_DISTRIBUTION_ENDPOINT' install.sh
-grep -q 'package_sha256' install.sh
-grep -q 'openssl dgst -sha256 -verify' install.sh
-grep -q 'HEXTUNNEL_LICENSE_PREVALIDATED=1' install.sh
+grep -q 'bootstrap_install_without_license' install.sh
+! grep -q 'bootstrap_authorize_and_download' install.sh
+! grep -q 'HEXTUNNEL_DISTRIBUTION_ENDPOINT' install.sh
+! grep -q 'package_sha256' install.sh
+! grep -q 'openssl dgst -sha256 -verify' install.sh
+! grep -q 'bootstrap_read_license_key' install.sh
+! grep -q 'HEXTUNNEL_LICENSE_PREVALIDATED=1' install.sh
 grep -q '"entrypoint": "bin/hextunnel-private-install"' docs/PRIVATE_DISTRIBUTION.md
 grep -q 'bash "$PREFLIGHT"' bin/hextunnel-private-install
 grep -q 'bash "$PREPARER".*licensed' bin/hextunnel-private-install
