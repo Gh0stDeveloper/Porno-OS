@@ -30,6 +30,13 @@ VERSION="$(tr -d '\r\n' < "$VERSION_FILE")"
 export HEXTUNNEL_PACKAGE_ROOT="$ROOT"
 bash "$PREFLIGHT"
 
+# El paquete beta es un tarball crudo del repo y no trae config/component-lock.env
+# (en el flujo privado lo genera CI al construir el paquete). Sin él, el
+# instalador heredado aborta en las guardas de URLs/SHA-256 bloqueados.
+if [[ ! -s "$ROOT/config/component-lock.env" ]]; then
+  bash "$ROOT/scripts/resolve-component-lock.sh" "$ROOT/config/component-lock.env"
+fi
+
 runtime_installer="$(mktemp /tmp/hextunnel-beta-original.XXXXXX.sh)"
 trap 'rm -f "${runtime_installer:-}"' EXIT
 bash "$PREPARER" "$LEGACY_INSTALLER" "$runtime_installer" beta
