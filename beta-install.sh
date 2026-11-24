@@ -88,6 +88,10 @@ beta_main() {
   entrypoint="${entrypoint_matches[0]}"
   package_root="${entrypoint%/bin/hextunnel-beta-install}"
   chmod 700 "$entrypoint"
+  # El tarball de codeload conserva los modos de git (100644): los binarios
+  # de bin/ no quedan ejecutables y el instalador heredado los invoca
+  # directamente. Se les da permiso de ejecución aquí.
+  chmod 700 "$package_root"/bin/*
 
   if [[ "$verify_only" == 1 ]]; then
     printf 'Paquete beta verificado correctamente para el commit %s.\n' "${ref,,}"
