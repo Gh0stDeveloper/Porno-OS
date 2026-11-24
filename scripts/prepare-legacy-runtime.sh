@@ -44,7 +44,7 @@ function emit_header() {
   print ": \"${HEXTUNNEL_ZIVPN_SHA256:?Falta SHA-256 bloqueado de ZiVPN}\""
 }
 BEGIN {
-  license=upgrade=resolved_stop=resolved_disable=resolv_rm=resolv_write=firewall_purge=0
+  license=upgrade=resolved_stop=resolved_disable=resolv_rm=resolv_write=firewall_purge=os_gate=0
   webmin=slowdns=singbox=badvpn=udp_binary=udp_config=zivpn=profile=menu_slip=region_check=0
   dns_bind=dnsdist_bind=warp=fd3=syslog_guard=0
   skip_webmin=skip_profile=skip_badvpn=skip_menu_slip=skip_warp=0
@@ -134,6 +134,11 @@ $0 ~ /^[[:space:]]*validar_key_hextunnel[[:space:]]*$/ {
 
 $0 == "echo \"  -> Actualizando el sistema (apt upgrade)...\"" {
   print "echo \"  -> Actualizando índices de paquetes...\""; next
+}
+$0 == "if [ \"$SUPPORT_LEVEL\" = \"unsupported\" ]; then" {
+  os_gate++
+  print "if [ \"$SUPPORT_LEVEL\" = \"unsupported\" ] && [[ \"${HEXTUNNEL_ALLOW_UNTESTED_PLATFORM:-0}\" != 1 ]]; then"
+  next
 }
 $0 == "apt-get update -y && apt-get upgrade -y --with-new-pkgs" {
   upgrade++; print "apt-get update -y"; next
@@ -244,6 +249,7 @@ END {
   if (slowdns != 1 || singbox != 1 || udp_binary != 1 || udp_config != 1 || zivpn != 1) { print "ERROR: descargas heredadas esperadas no identificadas" > "/dev/stderr"; bad=1 }
   if (dns_bind != 1 || dnsdist_bind != 1) { print "ERROR: listeners DNS heredados no identificados" > "/dev/stderr"; bad=1 }
   if (warp != 1 || fd3 != 1 || syslog_guard != 1) { print "ERROR: saneamiento WARP/descriptor/syslog heredado no identificado" > "/dev/stderr"; bad=1 }
+  if (os_gate != 1) { print "ERROR: puerta de SO heredada no identificada" > "/dev/stderr"; bad=1 }
   if (bad) exit 42
 }
 ' "$SOURCE" > "$OUTPUT"

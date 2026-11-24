@@ -148,6 +148,7 @@ grep -q 'preflight_all legacy-all' bin/hextunnel-legacy-preflight
 grep -q 'prepare-legacy-runtime.sh' scripts/production-readiness.sh
 grep -q 'Runtime heredado saneado' scripts/prepare-legacy-runtime.sh
 grep -q 'hextunnel-install-locked-component' scripts/prepare-legacy-runtime.sh
+grep -q 'HEXTUNNEL_ALLOW_UNTESTED_PLATFORM' scripts/prepare-legacy-runtime.sh
 grep -q 'hextunnel-slipstream-compat' scripts/prepare-legacy-runtime.sh
 grep -q 'locked_download' bin/hextunnel-install-locked-component
 grep -q 'module_install slipstream' bin/hextunnel-slipstream-compat
