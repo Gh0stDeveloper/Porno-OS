@@ -104,6 +104,8 @@ grep -q 'bash "$PREFLIGHT"' bin/hextunnel-beta-install
 grep -q 'bash "$PREPARER".*beta' bin/hextunnel-beta-install
 grep -q 'bash "$FINALIZER"' bin/hextunnel-beta-install
 grep -q 'exec /usr/local/bin/menu' bin/hextunnel-beta-install
+grep -Fq 'chmod 700 "$package_root"/bin/*' beta-install.sh
+grep -q 'resolve-component-lock.sh' bin/hextunnel-beta-install
 
 current_version="$(tr -d '\r\n' < VERSION)"
 [[ "$current_version" =~ ^1\.0\.0-rc\.[0-9]+$ ]]
